@@ -19,5 +19,8 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Dialogue Lab"
+    database_url: SecretStr = SecretStr(
+        "postgresql+asyncpg://dialogue:dialogue@127.0.0.1:5432/dialogue_lab"
+    )
     stt_api_key: SecretStr = SecretStr("")
     stt_model: str = "qwen-audio-3.1-asr-flash-streaming"
