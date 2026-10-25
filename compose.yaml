@@ -1,0 +1,24 @@
+name: dialogue-lab
+
+services:
+  postgres:
+    image: postgres:17.11
+    restart: unless-stopped
+    # 只传入数据库配置，不把应用的模型和语音密钥传入容器。
+    environment:
+      POSTGRES_DB: dialogue_lab
+      POSTGRES_USER: dialogue_lab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在根目录 .env 中设置 POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "dialogue_lab", "-d", "dialogue_lab"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:

@@ -30,6 +30,7 @@ migrations/                 Alembic 迁移
 prompts/                    系统指令正文
 packages/ai/                独立 AI 包
 tests/                     应用测试
+compose.yaml                本地 Docker 服务与数据卷
 .env.example                配置示例
 pyproject.toml / uv.lock     Python 依赖与锁文件
 docs-local/                 本地设计及开发文档，Git 忽略
@@ -38,7 +39,7 @@ docs/                       用户手动维护
 
 ## 环境准备
 
-本机需要 PostgreSQL、Node.js 22.12+（22 系列）或 Node.js 24+、npm 和 uv。Python 固定为 3.12；uv 可下载所需解释器。下列命令使用 PowerShell。
+本机需要 Docker Desktop、Node.js 22.12+（22 系列）或 Node.js 24+、npm 和 uv。PostgreSQL 在 Docker 中运行，本机无需单独安装。Python 固定为 3.12；uv 可下载所需解释器。下列命令使用 PowerShell。
 
 在项目根目录安装后端依赖：
 
@@ -63,25 +64,67 @@ npm ci
 Copy-Item .env.example .env
 ```
 
-配置 PostgreSQL 中已创建的数据库，以及模型与语音密钥：
+首次启动前，修改 `.env` 中的 `POSTGRES_PASSWORD`，并填写模型和语音密钥：
 
 ```dotenv
-DIALOGUE_LAB_DATABASE_URL=postgresql+asyncpg://用户名:密码@127.0.0.1:5432/dialogue_lab
+POSTGRES_PASSWORD=替换为本地数据库密码
+DIALOGUE_LAB_DATABASE_URL=postgresql+asyncpg://dialogue_lab:${POSTGRES_PASSWORD}@127.0.0.1:5432/dialogue_lab
 DEEPSEEK_API_KEY=你的DeepSeek密钥
 DIALOGUE_LAB_STT_API_KEY=你的百炼密钥
 ```
 
-数据库用户需要在目标数据库建表和迁移的权限。在根目录执行：
+数据库密码使用字母和数字，避免连接 URL 的特殊字符编码。保留密码行在连接地址行之前，应用加载 `.env` 时会展开引用。若系统环境变量已设置同名配置，先核对其值；环境变量会覆盖 `.env`。
+
+启动 Docker Desktop，在项目根目录执行：
 
 ```powershell
+docker compose up -d --wait postgres
 uv run alembic upgrade head
 ```
 
-迁移创建已确认的四张表：`sessions`、`session_messages`、`session_entries`、`session_compactions`。主键为自增 bigint，`request_id` 为 UUID。迁移不会替你创建 PostgreSQL 服务、数据库或用户。
+第一条命令等待 PostgreSQL 健康检查通过。首次使用空数据卷时，官方镜像创建 `dialogue_lab` 用户和同名数据库。第二条命令创建或升级业务表：`sessions`、`session_messages`、`session_entries`、`session_compactions`。主键为自增 bigint，`request_id` 为 UUID。
+
+Compose 项目名为 `dialogue-lab`，数据库服务名为 `postgres`，容器名由 Compose 生成为 `dialogue-lab-postgres-1`。后续服务加入同一份 `compose.yaml`，统一归属此项目。
+
+数据库只通过 `127.0.0.1:5432` 提供本机访问。数据卷 `dialogue-lab_postgres_data` 挂载到容器的 `/var/lib/postgresql/data`，由 Docker Desktop 管理，不存入 Git。重建容器时复用此数据卷，数据不会随容器删除。
+
+### 数据库启停与备份
+
+日常启动数据库执行 `docker compose up -d --wait postgres`。手动停止整个项目下的服务：
+
+```powershell
+docker compose stop
+```
+
+`restart: unless-stopped` 让 Docker 启动后恢复未被手动停止的服务。手动停止后需重新启动；退出 Docker Desktop 时数据库不可用。
+
+查看状态和日志：
+
+```powershell
+docker compose ps
+docker compose logs --tail 50 postgres
+```
+
+普通停机或重建容器不删除数据卷。`docker compose down -v` 会删除本项目的数据卷和会话数据，不用于日常停机。数据卷不是备份；升级或迁移前另存备份。
+
+以下命令把备份保存到本机临时目录。采用容器内生成、`docker compose cp` 复制的方式，避免旧版 PowerShell 重定向二进制数据：
+
+```powershell
+$backupPath = Join-Path $env:TEMP ("dialogue-lab-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".dump")
+docker compose exec -T postgres pg_dump -U dialogue_lab -d dialogue_lab -Fc -f /tmp/dialogue-lab.dump
+docker compose cp postgres:/tmp/dialogue-lab.dump $backupPath
+docker compose exec -T postgres rm /tmp/dialogue-lab.dump
+```
+
+需要长期保留时，将备份文件移到自己的备份目录。恢复时将文件复制到目标 PostgreSQL 容器，再用 `pg_restore` 导入空数据库。不要直接覆盖有日常数据的数据库。
+
+`POSTGRES_PASSWORD` 只用于空数据卷的首次初始化。已有数据库改密需先在 PostgreSQL 中修改用户密码，再同步 `.env` 并重启后端；只修改 `.env` 不会修改已有数据库密码。
+
+### 模型、语音与指令配置
 
 默认对话模型为 DeepSeek 的 `deepseek-flash`。可用 `DIALOGUE_LAB_AI_PROVIDER` 和 `DIALOGUE_LAB_AI_MODEL` 选择内置目录中的供应商与模型。OpenAI、Anthropic 分别使用 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`。`DIALOGUE_LAB_AI_API_KEY` 可覆盖当前调用凭据。
 
-默认识别模型为 `qwen-audio-3.1-asr-flash-streaming`，合成模型为 `qwen-audio-3.1-tts-flash`，音色为 `longanhuan_v3.1`。未单独填写 `DIALOGUE_LAB_TTS_API_KEY` 时，TTS 使用 STT 的百炼密钥。模型和音色必须由 speechio 及对应服务支持。
+默认识别模型为 `qwen-audio-3.1-asr-flash-streaming`，合成模型为 `qwen-audio-3.1-tts-flash`，音色为 `longanhuan_v3.1`。未单独填写 `DIALOGUE_LAB_TTS_API_KEY` 时，TTS 使用 STT 的百炼密钥。修改型号前，应确认 speechio 和对应服务均支持该模型及音色。
 
 `DIALOGUE_LAB_AI_REASONING` 未设置时采用模型默认行为；可配置模型支持的档位，包括模型支持时的 `off`。不将空字符串写作“未设置”。`DIALOGUE_LAB_AI_MAX_OUTPUT_TOKENS` 默认 4096。
 
@@ -91,7 +134,7 @@ uv run alembic upgrade head
 
 ## 启动与使用
 
-在项目根目录启动后端：
+先确认 Docker Desktop 与数据库已启动。在项目根目录启动后端：
 
 ```powershell
 uv run uvicorn dialogue_lab.main:app --reload --host 127.0.0.1 --port 8000
@@ -117,7 +160,7 @@ Vite 将 `/api` 的 HTTP 和 WebSocket 转发到 `127.0.0.1:8000`，会话连接
 
 ## 验证
 
-应用测试使用隔离的真实 PostgreSQL。先创建名称以 `_test` 结尾的专用测试数据库；测试会清空其中的四张业务表，不得使用业务数据库。
+应用测试使用隔离的真实 PostgreSQL。本次 Compose 只管理日常数据库，不创建测试服务。运行应用测试前，另行准备测试实例和名称以 `_test` 结尾的专用测试库。测试会清空其中的四张业务表，不得使用日常数据库。
 
 在项目根目录配置测试连接并迁移：
 
