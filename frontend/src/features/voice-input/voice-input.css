@@ -1,0 +1,120 @@
+.voice-input {
+  margin-top: 32px;
+  padding: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 8px 30px #27292d0c;
+}
+
+.voice-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.voice-controls h2 {
+  margin: 0 0 12px;
+}
+.voice-controls p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 14px;
+}
+.voice-controls button {
+  flex-shrink: 0;
+}
+.voice-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #a3a6ad;
+}
+.voice-indicator--listening {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 4px #41454c15;
+}
+.voice-indicator--preparing,
+.voice-indicator--stopping {
+  background: #a67a24;
+}
+.voice-indicator--error {
+  background: #b74a3d;
+}
+.voice-input [role='alert'] {
+  padding: 14px 16px;
+  background: #fff3ef;
+  color: #9a382c;
+  border-radius: 10px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.voice-live {
+  margin-top: 28px;
+  min-height: 140px;
+  padding: 20px;
+  background: var(--color-surface-muted);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.voice-live p {
+  margin: 12px 0 0;
+  line-height: 1.8;
+}
+.voice-caption {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.voice-placeholder {
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.voice-messages {
+  margin-top: 28px;
+}
+.voice-messages h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.voice-messages h3 span {
+  margin-left: 8px;
+  color: var(--color-muted);
+  font-weight: 400;
+}
+.voice-messages ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.voice-messages li {
+  margin-top: 12px;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+.voice-messages li p {
+  margin: 8px 0 0;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.voice-note {
+  margin: 24px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 480px) {
+  .voice-input {
+    padding: 20px;
+  }
+  .voice-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

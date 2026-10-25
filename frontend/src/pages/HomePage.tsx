@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getHealth } from '../shared/api/health'
+import { VoiceInput } from '../features/voice-input/VoiceInput'
 
 type ConnectionState =
   | { status: 'connecting' }
@@ -9,7 +10,9 @@ type ConnectionState =
 
 /** 初始化页面通过健康接口展示真实的后端连接结果。 */
 export function HomePage() {
-  const [connection, setConnection] = useState<ConnectionState>({ status: 'connecting' })
+  const [connection, setConnection] = useState<ConnectionState>({
+    status: 'connecting',
+  })
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
@@ -66,18 +69,26 @@ export function HomePage() {
         <a className="brand" href="/">
           Dialogue Lab
         </a>
-        <span className="stage-label">开发环境</span>
+        <span className="stage-label">语音输入</span>
       </header>
 
       <main className="home-page">
         <p className="eyebrow">DIALOGUE LAB</p>
-        <h1>对话，从这里开始。</h1>
-        <p className="intro">模拟对话应用的开发起点。</p>
+        <h1>开口，让想法变成文字。</h1>
+        <p className="intro">
+          点击开始，自然地说话。停顿之后，你的话会整理成一条消息。
+        </p>
 
-        <section className="connection-card" aria-labelledby="connection-heading">
+        <VoiceInput />
+
+        <details className="connection-card">
+          <summary>服务连接检查</summary>
           <h2 id="connection-heading">服务连接</h2>
           <div className="connection-status" role="status" aria-live="polite">
-            <span className={`status-dot status-dot--${connection.status}`} aria-hidden="true" />
+            <span
+              className={`status-dot status-dot--${connection.status}`}
+              aria-hidden="true"
+            />
             <strong>{statusLabel}</strong>
             <p>
               {connection.status === 'failed'
@@ -94,10 +105,10 @@ export function HomePage() {
           >
             {connection.status === 'connecting' ? '检查中…' : '重新检查'}
           </button>
-        </section>
+        </details>
       </main>
 
-      <footer className="app-footer">Dialogue Lab · 开发起点</footer>
+      <footer className="app-footer">Dialogue Lab · 语音输入</footer>
     </div>
   )
 }

@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from dialogue_lab.api.health import router as health_router
+from dialogue_lab.api.voice import router as voice_router
 from dialogue_lab.config import Settings
 
 
@@ -10,7 +11,9 @@ def create_app() -> FastAPI:
     """每个应用实例在创建时加载配置。"""
     settings = Settings()
     application = FastAPI(title=settings.app_name)
+    application.state.settings = settings
     application.include_router(health_router, prefix="/api")
+    application.include_router(voice_router, prefix="/api")
     return application
 
 

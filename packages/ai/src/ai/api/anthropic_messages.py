@@ -1,7 +1,7 @@
 """Anthropic Messages 协议，认证与宿主会话无关。"""
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ai.api._shared.messages import normalize_tool_id, transform_messages
 from ai.api._shared.replay import fold_system
@@ -14,7 +14,7 @@ from ai.types.messages import (
     ToolResultMessage,
     UserMessage,
 )
-from ai.types.model import map_reasoning
+from ai.types.model import resolve_reasoning
 from ai.types.options import RequestOptions, SimpleOptions
 
 
@@ -30,14 +30,6 @@ class AnthropicOptions(RequestOptions):
 class AnthropicCompat:
     adaptive_thinking: bool = False
     strict_tools: bool = False
-    thinking_budgets: dict[str, int] = field(
-        default_factory=lambda: {
-            "minimal": 1024,
-            "low": 2048,
-            "medium": 8192,
-            "high": 16384,
-        }
-    )
 
 
 class AnthropicMessagesAdapter(SDKAdapter):
@@ -82,14 +74,18 @@ class AnthropicMessagesAdapter(SDKAdapter):
             payload["temperature"] = temperature
         budget = getattr(options, "thinking_budget", None)
         if isinstance(options, SimpleOptions):
-            level = map_reasoning(model, options.reasoning)
-            if level and compat.adaptive_thinking:
+            level = resolve_reasoning(model, options.reasoning)
+            if level == "off":
+                # 关闭时不发送 effort，避免仍携带开启思考时的强度设置。
+                payload["thinking"] = {"type": "disabled"}
+            elif level and compat.adaptive_thinking:
                 payload["thinking"] = {"type": "adaptive"}
                 payload["output_config"] = {"effort": level}
             elif level:
-                if level not in compat.thinking_budgets:
-                    raise ValueError("No declared thinking budget for this level")
-                budget = min(compat.thinking_budgets[level], limit - 1024)
+                raise ValueError(
+                    "This model uses thinking budgets; set AnthropicOptions.thinking_budget "
+                    "instead of a reasoning level"
+                )
         if budget is not None:
             if budget < 1024 or budget >= limit:
                 raise ValueError("Thinking budget must be at least 1024 and below max_tokens")

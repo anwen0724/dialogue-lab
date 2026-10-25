@@ -21,7 +21,8 @@ class SDKAdapter:
                 if self.sdk == "openai":
                     from openai import AsyncOpenAI
 
-                    client = AsyncOpenAI(api_key="", max_retries=0)
+                    # 创建目录不需要凭据；实际请求的密钥和认证头由 _events 覆盖。
+                    client = AsyncOpenAI(api_key="unused-keyless-credential", max_retries=0)
                 else:
                     from anthropic import AsyncAnthropic
 

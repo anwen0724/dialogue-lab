@@ -14,7 +14,7 @@ from ai.types.messages import (
     Usage,
     UserMessage,
 )
-from ai.types.model import map_reasoning
+from ai.types.model import resolve_reasoning
 from ai.types.options import RequestOptions, SimpleOptions
 
 
@@ -66,10 +66,12 @@ class OpenAIResponsesAdapter(SDKAdapter):
             if value is not None:
                 payload[name] = value
         reasoning = (
-            map_reasoning(model, options.reasoning)
+            resolve_reasoning(model, options.reasoning)
             if isinstance(options, SimpleOptions)
             else getattr(options, "reasoning_effort", None)
         )
+        if isinstance(options, SimpleOptions) and reasoning == "off":
+            reasoning = "none"
         if reasoning:
             payload["reasoning"] = {"effort": reasoning}
         summary = getattr(options, "reasoning_summary", None)

@@ -13,7 +13,7 @@ from ai.types.model import Model, ModelDefaults
 from ai.types.options import SimpleOptions
 
 
-async def run_anthropic(events, context=None, options=None):
+async def run_anthropic(events, context=None, options=None, *, model=None):
     requests = []
 
     def respond(request):
@@ -27,7 +27,7 @@ async def run_anthropic(events, context=None, options=None):
             models.set_provider(
                 create_provider("p", auth=ApiKeyAuth(keyless=True), adapters={adapter.id: adapter})
             )
-            model = Model(
+            model = model or Model(
                 "p",
                 "m",
                 adapter.id,
@@ -45,6 +45,28 @@ async def run_anthropic(events, context=None, options=None):
             output = [event async for event in stream]
             result = await stream.result()
     return result, output, requests
+
+
+async def test_simple_reasoning_does_not_invent_a_budget_for_budget_based_models():
+    model = Model(
+        "p",
+        "budget-model",
+        "anthropic-messages",
+        "https://example.test",
+        reasoning_levels=("high",),
+        max_output_tokens=4096,
+    )
+    result, _, requests = await run_anthropic(
+        [
+            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}},
+            {"type": "message_stop"},
+        ],
+        options=SimpleOptions(reasoning="high"),
+        model=model,
+    )
+    assert result.stop_reason == "error"
+    assert "thinking_budget" in result.error.message
+    assert requests == []
 
 
 async def test_anthropic_stream_text_and_cache_usage_are_normalized():

@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-type ReasoningLevel = Literal["minimal", "low", "medium", "high", "xhigh"]
+type ReasoningLevel = Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,7 @@ class Model:
     headers: dict[str, str] = field(default_factory=dict)
     input_modalities: tuple[str, ...] = ("text",)
     supports_tools: bool = True
+    # 只列出当前模型可选的值；off 表示明确关闭，空目录不接受显式选择。
     reasoning_levels: tuple[ReasoningLevel, ...] = ()
     context_window: int | None = None
     max_output_tokens: int | None = None
@@ -45,16 +46,15 @@ class Model:
     cost: ModelCost | None = None
 
 
-def map_reasoning(model: Model, requested: ReasoningLevel | None) -> ReasoningLevel | None:
-    """通用级别向下钳制到已声明等级；无推理能力时忽略通用推理选项。"""
-    levels = ("minimal", "low", "medium", "high", "xhigh")
+def resolve_reasoning(model: Model, requested: ReasoningLevel | None) -> ReasoningLevel | None:
+    """采用本次选择或模型默认值；不支持的档位明确报错，不改写用户选择。"""
     requested = requested if requested is not None else model.defaults.reasoning
     if requested is None:
         return None
-    if requested not in levels:
-        raise ValueError(f"Unknown reasoning level: {requested}")
-    if not model.reasoning_levels:
-        return None
-    supported = [level for level in levels if level in model.reasoning_levels]
-    allowed = [level for level in supported if levels.index(level) <= levels.index(requested)]
-    return allowed[-1] if allowed else supported[0]
+    if requested not in model.reasoning_levels:
+        available = ", ".join(model.reasoning_levels) or "no reasoning levels"
+        raise ValueError(
+            f"Unsupported reasoning level {requested!r} for {model.provider}/{model.id}. "
+            f"Available: {available}"
+        )
+    return requested

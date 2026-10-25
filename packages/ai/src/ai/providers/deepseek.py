@@ -5,13 +5,17 @@ from dataclasses import replace
 from ai.api.openai_completions import CompletionsCompat, OpenAICompletionsAdapter
 from ai.auth.api_key import ApiKeyAuth
 from ai.provider import create_provider
+from ai.providers.deepseek_models import get_builtin_models
 
 
 def create_deepseek_provider(
-    *, models=(), base_url="https://api.deepseek.com", client=None, owns_client=False
+    *, models=None, base_url="https://api.deepseek.com", client=None, owns_client=False
 ):
-    """max_tokens 与 strict 支持由兼容配置声明，不在协议内判断名称。"""
-    compat = CompletionsCompat(max_tokens_field="max_tokens", strict_tools=False)
+    """省略目录时使用内置模型；显式目录替换内置项，兼容配置保持可覆盖。"""
+    models = get_builtin_models() if models is None else models
+    compat = CompletionsCompat(
+        max_tokens_field="max_tokens", strict_tools=False, thinking_format="deepseek"
+    )
     return create_provider(
         "deepseek",
         models=[

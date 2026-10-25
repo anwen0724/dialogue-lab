@@ -1,6 +1,7 @@
 """OpenAI Chat Completions 协议，支持兼容服务通过类型化配置接入。"""
 
 from dataclasses import dataclass
+from typing import Literal
 
 from ai.api._shared.messages import normalize_tool_id, transform_messages
 from ai.api._shared.replay import fold_system
@@ -15,7 +16,7 @@ from ai.types.messages import (
     Usage,
     UserMessage,
 )
-from ai.types.model import map_reasoning
+from ai.types.model import resolve_reasoning
 from ai.types.options import RequestOptions, SimpleOptions
 
 
@@ -32,6 +33,8 @@ class CompletionsCompat:
     reasoning_field: str = "reasoning_content"
     include_usage: bool = True
     strict_tools: bool = True
+    # 兼容服务声明控制字段格式，适配器不按供应商名称分支。
+    thinking_format: Literal["openai", "deepseek"] = "openai"
 
 
 class OpenAICompletionsAdapter(SDKAdapter):
@@ -68,11 +71,19 @@ class OpenAICompletionsAdapter(SDKAdapter):
         if limit is not None:
             payload[compat.max_tokens_field] = limit
         reasoning = (
-            map_reasoning(model, options.reasoning)
+            resolve_reasoning(model, options.reasoning)
             if isinstance(options, SimpleOptions)
             else getattr(options, "reasoning_effort", None)
         )
-        if reasoning is not None:
+        if isinstance(options, SimpleOptions) and reasoning is not None:
+            if compat.thinking_format == "deepseek":
+                payload["thinking"] = {"type": "disabled" if reasoning == "off" else "enabled"}
+                if reasoning != "off":
+                    payload["reasoning_effort"] = reasoning
+            else:
+                payload["reasoning_effort"] = "none" if reasoning == "off" else reasoning
+        elif reasoning is not None:
+            # 专用选项保留原生值，不将原生字符串解释成 Simple 的控制值。
             payload["reasoning_effort"] = reasoning
         if tools:
             if not model.supports_tools:

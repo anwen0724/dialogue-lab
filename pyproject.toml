@@ -4,9 +4,11 @@ version = "0.1.0"
 description = "Dialogue Lab backend"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "anyio>=4.15.1",
     "dialogue-ai",
     "fastapi>=0.162.0",
     "pydantic-settings>=2.16.1",
+    "speechio",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -28,7 +30,8 @@ select = ["E", "F", "I", "UP"]
 testpaths = ["tests"]
 
 [tool.uv.sources]
-dialogue-ai = { path = "../packages/ai", editable = true }
+dialogue-ai = { path = "packages/ai", editable = true }
+speechio = { path = "../speechio", editable = true }
 
 [dependency-groups]
 dev = [

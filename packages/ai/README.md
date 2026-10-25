@@ -26,16 +26,17 @@ uv run ruff check src tests examples
 宿主传入 `Model`、`Context` 和选项。`Model` 的 `provider` 选择供应商，`api` 选择协议，`base_url` 是模型端点。供应商目录用于发现，不是调用白名单。
 
 ```python
-from ai import Context, Model, Models, SimpleOptions, UserMessage
+from ai import Context, Models, SimpleOptions, UserMessage
 from ai.providers.openai import create_openai_provider
 
+
 async def reply(model_id: str):
-    provider = create_openai_provider(models=[
-        Model("openai", model_id, "openai-responses", ""),
-    ])
+    provider = create_openai_provider()
     async with Models() as models:
         models.set_provider(provider, owns_provider=True)
         model = models.get_model("openai", model_id)
+        if model is None:
+            raise ValueError(f"Unknown OpenAI model: {model_id}")
         stream = models.stream_simple(
             model,
             Context(system_prompt="简短回答。", messages=[UserMessage("你好")]),
@@ -47,7 +48,51 @@ async def reply(model_id: str):
         return await stream.result()
 ```
 
-示例读取 `OPENAI_API_KEY`，不选择默认模型。调用方提供真实模型 ID。Anthropic 与 DeepSeek 的工厂分别读取 `ANTHROPIC_API_KEY` 和 `DEEPSEEK_API_KEY`。工厂在目录构造时填入缺省端点，不在每次请求时另外查找隐藏端点。内置工厂的默认目录为空；调用方传入已选定的模型，不自动联网生成目录。
+示例读取 `OPENAI_API_KEY`。调用方传入内置模型 ID，例如 `await reply("gpt-6.1-sol")`。Anthropic 与 DeepSeek 的创建函数分别读取 `ANTHROPIC_API_KEY` 和 `DEEPSEEK_API_KEY`。创建 Provider 时，内置目录已经包含模型 ID、协议、能力和容量，空端点由创建函数填入。创建和查询目录均不发送网络请求，也不选择默认模型。
+
+### 2.1 内置模型目录
+
+| Provider ID | 模型 ID | 协议 |
+| --- | --- | --- |
+| `openai` | `gpt-6.1-sol`、`gpt-6-luna`、`gpt-6-astra` | `openai-responses` |
+| `anthropic` | `claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-opus-5-5`、`claude-fable-5-1` | `anthropic-messages` |
+| `deepseek` | `deepseek-flash`、`deepseek-v4-pro` | `openai-completions` |
+
+目录按 2026-10-25 的 [OpenAI 模型资料](https://developers.openai.com/api/docs/models)、[Anthropic 模型资料](https://platform.claude.com/docs/en/models/overview)和 [DeepSeek 模型资料](https://api-docs.deepseek.com/quick_start/pricing/)声明。目录是随包维护的静态配置，不会自动追踪供应商变化，也不表示账户已获得模型权限。
+
+三个创建函数对 `models` 参数采用相同规则：省略或传 `None` 时使用内置目录；显式传入序列时，用该序列替换内置目录；传 `[]` 时保留空目录。`base_url=` 能覆盖内置模型的端点；自定义 Model 已填写的 `base_url` 优先于创建函数的端点。
+
+```python
+from ai import Model
+from ai.providers.deepseek import create_deepseek_provider
+
+provider = create_deepseek_provider()  # 已包含两个内置模型
+custom = create_deepseek_provider(
+    models=[
+        Model("deepseek", "my-model", "openai-completions", ""),
+    ]
+)
+```
+
+`models.get_models("deepseek")` 返回已注册 Provider 的目录；`models.get_model("deepseek", "deepseek-flash")` 返回对应 Model，找不到时返回 `None`。调用前应处理找不到模型的情况。目录仍不是调用白名单，调用方也能直接传入完整的 Model。
+
+内置描述不覆盖供应商的温度和默认思考强度。`reasoning_levels` 提供当前模型实际可选的强度：OpenAI 与 Anthropic 为 `low/medium/high/xhigh/max`，DeepSeek 为 `low/high/max`。应用读取该字段显示选项，不需要另写一份列表。DeepSeek 接受的 medium 等别名不重复列入选项。
+
+支持关闭思考的模型还提供 `off`：GPT-6 Luna、Claude Haiku 5.5、DeepSeek Flash 和 DeepSeek V4 Pro。其余五个内置模型不提供 off。Sonnet 的 between_tools 仍允许工具间思考，不能当作完全关闭。
+
+调用方选哪个档位，AI 层就发送哪个档位。例如，`SimpleOptions(reasoning="max")` 会使用 max。传入不在模型选项中的档位时，返回错误消息，不发请求。切换模型后的界面选择由应用管理，AI 层不会自动改档。
+
+`SimpleOptions(reasoning="off")` 明确关闭思考。省略 reasoning 则采用 Model 默认值；内置模型没有预设强度，因此交给供应商采用默认行为。`None` 与 off 不等价，不需要用 Hook 才能关闭。
+
+```python
+options = SimpleOptions(reasoning="off")  # 明确关闭；模型必须提供 off
+options = SimpleOptions(reasoning="max")  # 明确使用 max
+options = SimpleOptions()  # 使用默认设置，不表示关闭
+```
+
+Anthropic 内置模型在选择强度时使用自适应推理。内置 `cost` 保持 `None`，本包不把有条件的价格简化为固定费率。
+
+### 2.2 调用入口
 
 | 入口 | 选项 | 结果 |
 | --- | --- | --- |
@@ -96,15 +141,19 @@ async def reply(model_id: str):
 
 ### 5.1 通用与专用选项
 
-Simple 参数优先于 Model 默认值。通用 reasoning 按 `minimal/low/medium/high/xhigh` 顺序向下钳制到模型声明的等级；没有更低支持等级时使用最低支持等级。模型未声明推理能力时忽略通用 reasoning。未知等级明确失败。
+Simple 参数优先于 Model 默认值。reasoning 必须属于目标模型的 `reasoning_levels`，否则返回错误消息，并列出当前可选档位。AI 层不自动升档、降档或忽略设置。两处都未设置 reasoning 时，不向供应商指定强度；这不表示关闭思考。
+
+off 由适配器转换为关闭指令：Responses 使用 `reasoning.effort="none"`，DeepSeek 和 Anthropic 使用 `thinking.type="disabled"`。关闭 DeepSeek 和 Anthropic 时不附带强度。选择 DeepSeek 强度时，同时发送 `thinking.type="enabled"`。`"none"` 是部分协议的原生值，Simple 接口用 `"off"` 表达关闭。
+
+本库与 pi 的内部表达不同：pi 的 Agent 将 off 转成未设置 reasoning，适配器据此处理关闭；本库保留显式 off，直到协议转换时才变成关闭指令。这样保留“使用默认设置”和“明确关闭”的区别。
 
 | 协议 | 专用选项与兼容配置 |
 | --- | --- |
-| Completions | `CompletionsOptions`：temperature、max_tokens、reasoning_effort。`CompletionsCompat`：最大输出字段、推理字段、用量事件与 strict 支持。 |
+| Completions | `CompletionsOptions`：temperature、max_tokens、reasoning_effort。`CompletionsCompat`：最大输出字段、推理字段、用量事件、strict 支持和 thinking_format。thinking_format 默认 openai，DeepSeek 工厂设为 deepseek，用于转换 Simple 的开关指令。 |
 | Responses | `ResponsesOptions`：temperature、max_output_tokens、reasoning_effort、reasoning_summary、store。store 默认 false；保存和重放加密推理 item。 |
-| Anthropic | `AnthropicOptions`：max_tokens、temperature、thinking_budget、cache_system。`AnthropicCompat` 声明自适应推理、strict 支持及等级预算。 |
+| Anthropic | `AnthropicOptions`：max_tokens、temperature、thinking_budget、cache_system。`AnthropicCompat` 声明自适应推理和 strict 支持。 |
 
-Anthropic 要求输出额度：来自请求、Model 默认值或 Model.max_output_tokens，均未知时明确失败。预算式通用推理采用 minimal=1024、low=2048、medium=8192、high=16384，并在当前额度下为正文保留 1024 token；额度不足时明确失败。xhigh 需自适应推理或显式预算映射，不自行猜测。专用 thinking_budget 不自动钳制。
+Anthropic 要求输出额度：来自请求、Model 默认值或 Model.max_output_tokens，均未知时明确失败。自适应推理模型把选中的强度写入 output_config.effort。预算式模型使用专用 thinking_budget；Simple 接口不再把等级换成预算。专用 thinking_budget 不自动调整，必须至少为 1024 且小于 max_tokens。
 
 OpenAI 的 input 已包含缓存读，output 已包含 reasoning；这些子集不再加到 total。Anthropic 原 input_tokens 不含缓存读写，统一 input 加入已知缓存读写一次。未知 token 字段保持 None。
 

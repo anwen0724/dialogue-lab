@@ -21,7 +21,7 @@ from ai.types.messages import (
     ToolResultMessage,
     UserMessage,
 )
-from ai.types.model import Model
+from ai.types.model import Model, ModelDefaults
 from ai.types.options import SimpleOptions
 
 
@@ -287,7 +287,7 @@ async def test_transport_failure_preserves_partial_message_and_incomplete_json()
     assert events[-1].type == "error"
 
 
-async def test_simple_options_use_declared_reasoning_mapping_and_hard_tool_constraints():
+async def test_simple_options_preserve_supported_reasoning_and_request_parameters():
     model = Model(
         "custom",
         "reasoner",
@@ -299,13 +299,68 @@ async def test_simple_options_use_declared_reasoning_mapping_and_hard_tool_const
     result, requests = await invoke_chat(
         Context(messages=[UserMessage("hi")]),
         model=model,
-        options=SimpleOptions(temperature=0.2, max_output_tokens=100, reasoning="xhigh"),
+        options=SimpleOptions(temperature=0.2, max_output_tokens=100, reasoning="high"),
     )
     assert result.stop_reason == "stop", result.error
     assert requests[0]["reasoning_effort"] == "high"
     assert requests[0]["max_completion_tokens"] == 100
     assert requests[0]["temperature"] == 0.2
 
+
+@pytest.mark.parametrize(
+    "levels, requested",
+    [(("low", "high"), "medium"), (("low", "high"), "xhigh"), ((), "high")],
+)
+async def test_unsupported_reasoning_is_rejected_without_sending_a_request(levels, requested):
+    model = Model(
+        "custom",
+        "reasoner",
+        "openai-completions",
+        "https://example.test",
+        reasoning_levels=levels,
+    )
+    result, requests = await invoke_chat(
+        Context(messages=[UserMessage("hi")]),
+        model=model,
+        options=SimpleOptions(reasoning=requested),
+    )
+    assert result.stop_reason == "error"
+    assert requested in result.error.message
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    "default, requested, expected",
+    [
+        (None, None, None),
+        ("high", None, "high"),
+        ("high", "low", "low"),
+        ("off", None, "none"),
+        ("high", "off", "none"),
+    ],
+)
+async def test_reasoning_uses_explicit_choice_then_model_default(default, requested, expected):
+    model = Model(
+        "custom",
+        "reasoner",
+        "openai-completions",
+        "https://example.test",
+        reasoning_levels=("off", "low", "high"),
+        defaults=ModelDefaults(reasoning=default),
+    )
+    result, requests = await invoke_chat(
+        Context(messages=[UserMessage("hi")]),
+        model=model,
+        options=SimpleOptions(reasoning=requested),
+    )
+    assert result.stop_reason == "stop", result.error
+    if expected is None:
+        assert "reasoning_effort" not in requests[0]
+    else:
+        assert requests[0]["reasoning_effort"] == expected
+
+
+async def test_required_tool_constraints_are_rejected_when_unsupported():
     no_strict = Model(
         "custom",
         "m",
