@@ -1,5 +1,5 @@
 :root {
-  font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   color: #27292d;
   background: #f3f3f4;
   font-synthesis: none;
@@ -21,7 +21,8 @@ body {
 }
 
 .app-shell {
-  min-height: 100svh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -31,7 +32,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 28px 6vw;
+  padding: 18px 24px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -45,85 +46,6 @@ body {
 .stage-label {
   font-size: 13px;
   color: var(--color-muted);
-}
-
-.home-page {
-  flex: 1;
-  width: min(100%, 760px);
-  margin: 0 auto;
-  padding: clamp(32px, 5vh, 64px) 24px 64px;
-}
-
-.eyebrow {
-  color: var(--color-accent);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-}
-
-h1 {
-  font-size: clamp(30px, 5vw, 46px);
-  line-height: 1.35;
-  letter-spacing: -0.04em;
-  margin: 20px 0 16px;
-}
-
-.intro {
-  color: var(--color-muted);
-  line-height: 1.8;
-}
-
-.connection-card {
-  margin-top: 40px;
-  padding: 28px;
-  background: #fff;
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-}
-
-.connection-card summary {
-  cursor: pointer;
-  color: var(--color-muted);
-  font-size: 14px;
-}
-
-.connection-card[open] summary {
-  margin-bottom: 24px;
-}
-
-h2 {
-  margin: 0 0 24px;
-  font-size: 16px;
-}
-
-.connection-status {
-  line-height: 1.7;
-}
-
-.connection-status p {
-  margin: 10px 0 24px;
-  color: var(--color-muted);
-  overflow-wrap: anywhere;
-}
-
-.status-dot {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  margin-right: 10px;
-}
-
-.status-dot--connecting {
-  background: #9a7625;
-}
-
-.status-dot--connected {
-  background: var(--color-accent);
-}
-
-.status-dot--failed {
-  background: #b74a3d;
 }
 
 button {
@@ -152,19 +74,8 @@ button:disabled {
   outline-offset: 4px;
 }
 
-.app-footer {
-  padding: 24px;
-  text-align: center;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
 @media (max-width: 480px) {
   .app-header {
-    padding: 22px 24px;
-  }
-
-  .connection-card {
-    padding: 22px;
+    padding: 16px;
   }
 }

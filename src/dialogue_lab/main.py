@@ -6,13 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from dialogue_lab.api.health import router as health_router
+from dialogue_lab.api.session_websocket import router as websocket_router
 from dialogue_lab.api.sessions import router as session_router
-from dialogue_lab.api.voice import router as voice_router
+from dialogue_lab.bootstrap import Services
 from dialogue_lab.config import Settings
-from dialogue_lab.sessions.service import SessionService
 from dialogue_lab.sessions.types import SessionError
-from dialogue_lab.storage.database import Database
-from dialogue_lab.storage.session_store import SessionStore
 
 
 def create_app() -> FastAPI:
@@ -21,18 +19,19 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application):
-        database = Database(settings.database_url.get_secret_value())
-        application.state.sessions = SessionService(SessionStore(database))
+        services = Services(settings)
+        application.state.services = services
+        application.state.sessions = services.sessions
         try:
             yield
         finally:
-            await database.close()
+            await services.close()
 
     application = FastAPI(title=settings.app_name, lifespan=lifespan)
     application.state.settings = settings
     application.include_router(health_router, prefix="/api")
-    application.include_router(voice_router, prefix="/api")
     application.include_router(session_router, prefix="/api")
+    application.include_router(websocket_router, prefix="/api")
 
     @application.exception_handler(SessionError)
     async def session_error(request: Request, error: SessionError):

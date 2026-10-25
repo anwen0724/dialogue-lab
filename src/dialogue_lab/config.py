@@ -1,8 +1,9 @@
 """集中读取应用配置，环境变量优先于项目根目录的 .env。"""
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,3 +25,12 @@ class Settings(BaseSettings):
     )
     stt_api_key: SecretStr = SecretStr("")
     stt_model: str = "qwen-audio-3.1-asr-flash-streaming"
+    ai_provider: Literal["deepseek", "openai", "anthropic"] = "deepseek"
+    ai_model: str = "deepseek-flash"
+    ai_api_key: SecretStr = SecretStr("")
+    ai_reasoning: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
+    ai_max_output_tokens: int = Field(default=4096, gt=0)
+    tts_api_key: SecretStr = SecretStr("")
+    tts_model: str = "qwen-audio-3.1-tts-flash"
+    tts_voice: str = "longanhuan_v3.1"
+    prompts_directory: Path = Path(__file__).resolve().parents[2] / "prompts"

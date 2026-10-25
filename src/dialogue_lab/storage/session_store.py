@@ -48,6 +48,22 @@ class SessionStore:
                 .all()
             )
 
+    async def find_user_request(self, session_id, request_id):
+        async with self.database.engine.connect() as connection:
+            return (
+                (
+                    await connection.execute(
+                        select(messages).where(
+                            messages.c.session_id == session_id,
+                            messages.c.request_id == request_id,
+                            messages.c.message_kind == "user_message",
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+
     async def append(self, session_id, request_id, kind, payload):
         """会话行锁串行化路径追加；请求去重和路径更新在同一短事务中完成。"""
         async with self.database.engine.begin() as connection:

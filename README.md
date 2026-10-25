@@ -1,154 +1,153 @@
 # Dialogue Lab
 
-Dialogue Lab 是一个模拟对话 AI 应用，计划提供文字和语音交互。
+Dialogue Lab 是一个支持语音和文字交流的 AI 应用。用户可以新建或打开会话，说话或打字后获得流式文字回复和语音播放。消息保存在 PostgreSQL 中，刷新后可以继续交流。
 
-当前已实现独立 AI 包，以及网页实时语音输入。网页通过麦克风采集音频，经 WebSocket 交给后端的 speechio，显示识别中的文字和最终用户消息。页面采用石墨灰主题。
-
-本次语音输入还没有接入 AI 回复、语音播放或数据库。消息保留在当前页面内存中，刷新后清空。自动化验证已通过；真实百炼识别效果仍需配置凭据后验证。
+当前已接通会话管理、上下文管理、runtime 调度、独立 AI 层与 speechio。系统指令按本次选择从 `prompts/` 加载；上下文达到预算条件时生成摘要并保留近期原文。原始消息仍可读取。页面采用石墨灰主题。
 
 ## 技术栈与目录
 
-前端使用 React、TypeScript 和 Vite。后端使用 Python 3.12、FastAPI、Uvicorn 和 Pydantic Settings。前端依赖通过 npm 管理，后端依赖通过 uv 管理。
+前端使用 React、TypeScript 和 Vite。后端使用 Python 3.12、FastAPI、Uvicorn、Pydantic Settings、SQLAlchemy 异步接口、asyncpg 和 Alembic。依赖分别由 npm 和 uv 管理。
 
 ```text
-frontend/
-  src/
-    app/            应用入口
-    pages/          页面与页面交互
-    features/voice-input/  语音输入界面、连接、录音和 Worklet
-    shared/api/     HTTP 请求与响应校验
-    styles/         全局样式
-  package-lock.json
+frontend/src/
+  pages/                    页面布局与功能组合
+  features/sessions/        会话列表、创建和打开
+  features/dialogue/        消息、提交和会话连接协调
+  features/voice-input/     麦克风和 PCM Worklet
+  features/voice-output/    音频队列、播放和停止
+  shared/api/               HTTP 请求与边界解析
 src/dialogue_lab/
-  api/              HTTP 与 WebSocket 路由
-  voice/            speechio 识别装配、事件和资源生命周期
-  config.py         环境配置
-  main.py           FastAPI 应用装配
-tests/              应用接口测试
-packages/ai/        独立 AI 包
-.env.example        本地配置示例
-pyproject.toml      Python 项目与依赖配置
-uv.lock             Python 依赖锁文件
-docs-local/         本地设计与开发文档，Git 忽略
-docs/               用户维护的提交文档
+  api/                      HTTP、会话 WebSocket
+  sessions/                 会话与消息规则
+  context/                  文档加载、路径投影、预算、压缩和 AI 输入转换
+  runtime/                  调度、模型调用和输出协调
+  voice/                    speechio 识别与合成生命周期
+  storage/                  数据库、表映射和事务
+  bootstrap.py              应用资源装配
+  config.py                 环境配置
+  main.py                   FastAPI 入口
+migrations/                 Alembic 迁移
+prompts/                    系统指令正文
+packages/ai/                独立 AI 包
+tests/                     应用测试
+.env.example                配置示例
+pyproject.toml / uv.lock     Python 依赖与锁文件
+docs-local/                 本地设计及开发文档，Git 忽略
+docs/                       用户手动维护
 ```
 
 ## 环境准备
 
-本机需要 Node.js 22.12+（22 系列）或 Node.js 24+、npm 和 uv。后端固定使用 Python 3.12；如果本机缺少该版本，uv 在同步依赖时下载解释器。
+本机需要 PostgreSQL、Node.js 22.12+（22 系列）或 Node.js 24+、npm 和 uv。Python 固定为 3.12；uv 可下载所需解释器。下列命令使用 PowerShell。
 
-以下命令使用 PowerShell。每组命令均注明执行目录。
-
-### 安装后端依赖
-
-在仓库根目录执行：
+在项目根目录安装后端依赖：
 
 ```powershell
 uv sync --locked
 ```
 
-uv 在项目根目录创建并使用 `.venv`，同时安装运行依赖和开发依赖。`uv run` 自动使用这个虚拟环境，不必先激活它。
+uv 使用根目录 `.venv`，`uv run` 不要求先激活虚拟环境。speechio 通过相邻项目 `../speechio` 可编辑安装；另一台机器也需要提供该项目。AI 包通过 `packages/ai` 安装。
 
-当前 speechio 以可编辑本地包接入，路径为相对于项目根目录的 `../speechio`，即本机的 `C:/all/work/practice/speechio`。在另一台机器准备环境时，也需要提供这个相邻项目；当前锁文件不会自动改为安装同名远程包。云端识别使用包内置 VAD，不需要下载本地语音识别模型。
-
-如果编辑器需要指定 Python 解释器，在 Windows 中选择 `.venv/Scripts/python.exe`。
-
-### 安装前端依赖
-
-在仓库根目录的另一个终端执行：
+在另一个终端安装前端依赖：
 
 ```powershell
 cd frontend
 npm ci
 ```
 
-`package-lock.json` 和 `uv.lock` 记录依赖版本，均纳入 Git 管理。虚拟环境、`node_modules`、构建输出和本地 `.env` 不纳入 Git。
+### 配置与数据库
 
-## 本地启动
-
-### 启动后端
-
-在项目根目录执行：
-
-```powershell
-uv run uvicorn dialogue_lab.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-后端地址为 <http://127.0.0.1:8000>，交互式 API 文档位于 <http://127.0.0.1:8000/docs>。
-
-### 启动前端
-
-在 `frontend` 目录的另一个终端执行：
-
-```powershell
-npm run dev
-```
-
-打开 <http://127.0.0.1:5173>。点击“开始说话”并允许麦克风权限。识别服务准备完成后，页面显示“正在听”。说话期间显示实时文字，停顿后生成一条用户消息。
-
-点击“结束录音”后，麦克风停止采集，页面继续等待最后一句的识别结果，完成后恢复开始按钮。准备期间可以点击“取消准备”；断线或识别失败后可以再次开始，之前已确定的消息不会删除。
-
-页面下方保留“服务连接检查”，可查看健康接口状态或重新检查。健康接口不验证语音密钥是否有效。
-
-Vite 将 `/api` 的 HTTP 和 WebSocket 请求转发到 `http://127.0.0.1:8000`。识别连接使用 `/api/voice/input`，浏览器无需访问另一个源。Vite 使用固定端口 5173；如果端口被占用，启动会报错。
-
-### 后端配置
-
-默认配置可以启动应用和检查健康接口。要使用云端语音识别，在项目根目录准备本地配置：
+首次配置时复制 `.env.example` 为 `.env`。若已有 `.env`，只补充缺少的配置，不覆盖凭据。
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-如果 `.env` 已存在，直接编辑现有文件，不要覆盖其中的凭据。添加以下配置：
+配置 PostgreSQL 中已创建的数据库，以及模型与语音密钥：
 
 ```dotenv
-DIALOGUE_LAB_STT_API_KEY=填写你的百炼密钥
-DIALOGUE_LAB_STT_MODEL=qwen-audio-3.1-asr-flash-streaming
+DIALOGUE_LAB_DATABASE_URL=postgresql+asyncpg://用户名:密码@127.0.0.1:5432/dialogue_lab
+DEEPSEEK_API_KEY=你的DeepSeek密钥
+DIALOGUE_LAB_STT_API_KEY=你的百炼密钥
 ```
 
-模型名称默认就是上面的流式识别模型，只填密钥也可以。修改型号时必须使用 speechio 已适配、支持原生流式识别的型号。对话模型的密钥不等于百炼语音密钥。
+数据库用户需要在目标数据库建表和迁移的权限。在根目录执行：
 
-密钥只在后端使用，不需要前端 `.env`。`DIALOGUE_LAB_APP_NAME` 设置 FastAPI 文档中的应用名称。系统环境变量优先于 `.env`。修改配置后重启后端。
+```powershell
+uv run alembic upgrade head
+```
 
-浏览器使用 AudioWorklet，需在 localhost、127.0.0.1 或 HTTPS 下打开。输入音频为 16 kHz 单声道 PCM16，识别自动分段采用 speechio 默认策略。每段默认最长 30 秒，持续讲话到达段长后由 speechio 分段处理，不限制整个输入连接只能使用 30 秒。
+迁移创建已确认的四张表：`sessions`、`session_messages`、`session_entries`、`session_compactions`。主键为自增 bigint，`request_id` 为 UUID。迁移不会替你创建 PostgreSQL 服务、数据库或用户。
 
-服务监听地址、端口和热重载由启动命令控制。
+默认对话模型为 DeepSeek 的 `deepseek-flash`。可用 `DIALOGUE_LAB_AI_PROVIDER` 和 `DIALOGUE_LAB_AI_MODEL` 选择内置目录中的供应商与模型。OpenAI、Anthropic 分别使用 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`。`DIALOGUE_LAB_AI_API_KEY` 可覆盖当前调用凭据。
+
+默认识别模型为 `qwen-audio-3.1-asr-flash-streaming`，合成模型为 `qwen-audio-3.1-tts-flash`，音色为 `longanhuan_v3.1`。未单独填写 `DIALOGUE_LAB_TTS_API_KEY` 时，TTS 使用 STT 的百炼密钥。模型和音色必须由 speechio 及对应服务支持。
+
+`DIALOGUE_LAB_AI_REASONING` 未设置时采用模型默认行为；可配置模型支持的档位，包括模型支持时的 `off`。不将空字符串写作“未设置”。`DIALOGUE_LAB_AI_MAX_OUTPUT_TOKENS` 默认 4096。
+
+系统指令默认位于 `prompts/`，可通过 `DIALOGUE_LAB_PROMPTS_DIRECTORY` 指定目录。页面选项来自其中的 Markdown 文件名。修改文档后，下一次调用使用新正文，不改写旧消息。
+
+环境变量优先于根目录 `.env`。配置变更需要重启后端；指令正文变更不需要。密钥仅由后端使用，不放入前端配置或提交到 Git。
+
+## 启动与使用
+
+在项目根目录启动后端：
+
+```powershell
+uv run uvicorn dialogue_lab.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+在 `frontend` 目录的另一个终端启动前端：
+
+```powershell
+npm run dev
+```
+
+打开 <http://127.0.0.1:5173>，创建或选择会话。点击“开始说话”并允许麦克风访问；准备完成后开始交流。停顿产生的确认文字由后端直接提交，浏览器不会重复发送。也可以在消息框中打字发送。
+
+“结束录音”停止麦克风并确认尾句，尾句仍会触发回复。“停止回复”停止当前模型、合成和播放，保留录音。确认新的输入会停止旧回复；临时识别文字不会触发停止。停止时已收到的部分回复会保存。
+
+刷新后读取保存的消息，不自动重发请求或播放历史音频。同一会话同时只允许一个窗口控制实时输入；其他窗口可查看，重新打开可重新申请控制权。
+
+系统指令选择仅用于本次输入，不与会话绑定。自动压缩期间，新输入等待压缩结束后处理。文字生成、语音合成、浏览器播放分别结束；合成或播放失败不会自动重试模型调用。
+
+Vite 将 `/api` 的 HTTP 和 WebSocket 转发到 `127.0.0.1:8000`，会话连接使用 `/api/sessions/{session_id}/realtime`。端口由启动命令和 Vite 配置控制。后端 API 文档为 <http://127.0.0.1:8000/docs>。
+
+浏览器需通过 localhost、127.0.0.1 或 HTTPS 使用 AudioWorklet。输入音频为 16 kHz 单声道 PCM16；输出按服务端声明的格式播放。
 
 ## 验证
 
-在项目根目录执行：
+应用测试使用隔离的真实 PostgreSQL。先创建名称以 `_test` 结尾的专用测试数据库；测试会清空其中的四张业务表，不得使用业务数据库。
+
+在项目根目录配置测试连接并迁移：
 
 ```powershell
+$env:TEST_DATABASE_URL='postgresql+asyncpg://测试用户:密码@127.0.0.1:55432/dialogue_test'
+$env:DIALOGUE_LAB_DATABASE_URL=$env:TEST_DATABASE_URL
+uv run alembic upgrade head
+uv run pytest tests --basetemp=.pytest_cache/app-tests
+Remove-Item Env:DIALOGUE_LAB_DATABASE_URL
 uv run ruff check .
 uv run ruff format --check .
-uv run pytest
+uv lock --check
 ```
 
-在 `frontend` 目录执行：
+`TEST_DATABASE_URL` 未配置时，测试默认连接 `127.0.0.1:55432/dialogue_test`，用户名及密码为 `dialogue_test`。上述移除环境变量的命令恢复从 `.env` 读取应用连接；若原先通过环境变量配置业务连接，应恢复原值。
+
+在 `frontend` 执行：
 
 ```powershell
-npm run lint
 npm run test
+npm run lint
 npm run build
 ```
 
-`npm run build` 先检查 TypeScript 类型，再生成 `frontend/dist`。如果只需要检查类型，执行 `npm run typecheck`。
+`npm run build` 包含 TypeScript 检查。后端自动化只在供应商或 speechio 边界使用替身；业务会话、上下文、调度和数据库运行真实实现。前端替换设备与网络边界，执行真实页面、连接和 PCM 逻辑。
 
-启动后端后，可在 PowerShell 中直接检查健康接口：
+本次已验证真实 STT → 模型 → TTS 链路、真实合成途中取消、两轮文字对话和刷新恢复。语音链路使用合成音频输入；真人麦克风、中英文交流体验、自然停顿和扬声器回声仍需用户验收。详细证据见 `docs-local/plans/persistent-voice-dialogue.md`。
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/api/health
-```
+## 运行边界
 
-`GET /api/health` 返回 HTTP 200 和 `{"status":"ok"}`。这个接口仅证明 HTTP 服务能够响应；它不检查数据库、模型供应商或语音服务。
+当前调度按单后端进程运行，不使用多 Uvicorn worker。同一进程内不同会话独立调度。进程崩溃可能丢失尚未形成结束结果的内存回复草稿，已提交消息仍在数据库中。
 
-前端测试验证真实 Worklet 处理代码的 PCM 分帧及尾部输出，并在浏览器设备和 WebSocket 边界使用替身，验证页面状态与消息。后端测试验证公开 WebSocket 协议，并用真实 speechio 与内置 VAD 完成静音输入装配检查。自动化测试不调用百炼识别服务，不能据此认定真实识别准确率或停顿效果达标。
-
-真实联调时，连续说几句中文和英文，检查临时文字、停顿后的最终消息、结束前尾句，以及结束后麦克风释放。再检查拒绝麦克风权限、断开后端与重新开始。实现计划与证据保存在 `docs-local/plans/realtime-voice-input.md`。
-
-## 构建与部署边界
-
-`npm run preview` 可预览构建后的静态文件。Vite 预览服务器会沿用开发配置中的 `/api` 代理，因此检查连接仍需要启动后端。代理配置不会写入构建后的静态文件。
-
-部署时，静态服务需要将同源的 `/api` 请求转发到后端，支持 WebSocket 升级并保留原始 Host。语音入口检查浏览器 Origin 与 Host 是否一致。当前尚未配置生产部署和数据库。
+`GET /api/health` 只检查 HTTP 服务响应，不验证数据库或外部服务。`npm run preview` 预览前端构建并沿用 Vite 的 `/api` 代理。生产静态服务需另配同源 `/api` 代理、WebSocket 升级并保留 Host；当前没有生产部署配置。

@@ -20,3 +20,8 @@ async def get_session(session_id: int, request: Request):
 @router.get("/sessions")
 async def list_sessions(request: Request):
     return await request.app.state.sessions.list()
+
+
+@router.get("/presets")
+async def list_presets(request: Request):
+    return request.app.state.services.prompts.list()

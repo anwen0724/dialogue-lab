@@ -81,3 +81,54 @@ async def test_reusing_request_id_for_different_input_is_rejected(session_servic
         await session_service.submit(session_id, request, "Different")
     assert caught.value.code == "REQUEST_CONFLICT"
     assert len((await session_service.open(session_id))["messages"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_cross_session_reference_rolls_back_message_and_pointer(database, session_service):
+    from sqlalchemy import func, insert, select, update
+    from sqlalchemy.exc import IntegrityError
+
+    from dialogue_lab.storage.tables import entries, messages, sessions
+
+    first = int((await session_service.create("First"))["session_id"])
+    second = int((await session_service.create("Second"))["session_id"])
+    await session_service.submit(first, uuid4(), "Existing")
+    foreign_entry = (await session_service.path(first))[-1]["entry_id"]
+    with pytest.raises(IntegrityError):
+        async with database.engine.begin() as connection:
+            message_id = (
+                await connection.execute(
+                    insert(messages)
+                    .values(
+                        session_id=second,
+                        request_id=uuid4(),
+                        message_kind="user_message",
+                        message_json={"model_content": []},
+                    )
+                    .returning(messages.c.message_id)
+                )
+            ).scalar_one()
+            await connection.execute(
+                insert(entries).values(
+                    session_id=second,
+                    parent_entry_id=foreign_entry,
+                    entry_type="message",
+                    message_id=message_id,
+                )
+            )
+    async with database.engine.connect() as connection:
+        count = (
+            await connection.execute(
+                select(func.count()).select_from(messages).where(messages.c.session_id == second)
+            )
+        ).scalar_one()
+    assert count == 0
+    assert (await session_service.open(second))["messages"] == []
+    with pytest.raises(IntegrityError):
+        async with database.engine.begin() as connection:
+            await connection.execute(
+                update(sessions)
+                .where(sessions.c.session_id == second)
+                .values(active_entry_id=foreign_entry)
+            )
+    assert await session_service.path(second) == []

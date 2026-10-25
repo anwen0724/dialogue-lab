@@ -16,6 +16,10 @@ class SessionService:
     async def list(self) -> list[dict]:
         return [session_view(row) for row in await self.store.list()]
 
+    async def path(self, session_id: int):
+        await self.store.get(session_id)
+        return await self.store.path(session_id)
+
     async def open(self, session_id: int) -> dict:
         return {
             **session_view(await self.store.get(session_id)),
@@ -25,6 +29,19 @@ class SessionService:
                 if row["entry_type"] == "message"
             ],
         }
+
+    async def find_request(self, session_id, request_id, text, source):
+        """重复请求只返回既有消息，不打断当前回复。"""
+        row = await self.store.find_user_request(session_id, request_id)
+        if row is None:
+            return None
+        payload = row["message_json"]
+        if (
+            payload["model_content"] != [{"type": "text", "text": text.strip()}]
+            or payload["source"] != source
+        ):
+            raise SessionError("REQUEST_CONFLICT", "同一请求标识不能用于不同的消息内容。")
+        return message_view(row)
 
     async def submit(self, session_id, request_id, text, source="text"):
         """保存确认输入，返回消息及是否首次提交。"""
