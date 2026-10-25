@@ -1,2 +1,18 @@
 # Local documentation is maintained outside version control.
 /docs-local/
+
+# Local environments and secrets.
+.venv/
+.env
+.env.*
+!.env.example
+
+# Build outputs and tool caches.
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.tsbuildinfo
