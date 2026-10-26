@@ -49,17 +49,24 @@ class ContextManager:
         settings=None,
         *,
         transform_context: TransformContext | None = None,
+        scene_store=None,
     ):
         self.sessions, self.models, self.model = sessions, models, model
         self.prompts, self.compactions, self.settings = prompts, compactions, settings
         self.settings = settings or CompactionSettings()
         self.transform_context = transform_context
+        self.scene_store = scene_store
         # 只保存用于判断用量是否仍有效的摘要；不缓存或持久化指令正文。
         self._usage_system = {}
 
     async def build(self, session_id: int, preset: str) -> PreparedContext:
         """读取当前文档和有效路径；此时不执行请求级消息调整。"""
         system = await asyncio.to_thread(self.prompts.load, preset)
+        if self.scene_store is not None:
+            scene = await self.scene_store.find_for_session(session_id)
+            if scene is not None:
+                # 文档保存模板；当次使用当前名字，预算和指纹均按替换后的正文计算。
+                system = system.replace("{{character_name}}", scene["character_name"])
         path = await self.sessions.path(session_id)
         projected = project_path(path, self.models)
         messages = [message for _, message in projected]

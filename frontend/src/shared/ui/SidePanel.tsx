@@ -26,6 +26,8 @@ export function SidePanel({
       className={`side-panel ${className}`}
       aria-label={title}
       onCancel={(event) => {
+        // 文件选择框的取消事件会冒泡，只处理面板自身的取消。
+        if (event.target !== event.currentTarget) return
         event.preventDefault()
         onClose()
       }}

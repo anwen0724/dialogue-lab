@@ -74,7 +74,14 @@ class Services:
             if self.settings.ai_api_key.get_secret_value()
             else None,
         )
-        context = ContextManager(self.sessions, self.models, model, self.prompts, self.compactions)
+        context = ContextManager(
+            self.sessions,
+            self.models,
+            model,
+            self.prompts,
+            self.compactions,
+            scene_store=self.scenes.store,
+        )
         scheduler = Scheduler(
             session_id,
             self.sessions,

@@ -28,6 +28,21 @@ class SceneStore:
         async with self.database.engine.connect() as connection:
             return await get_scene(connection, scene_id)
 
+    async def find_for_session(self, session_id):
+        """读取会话所属场景的当前资料；归档场景仍可用于已有会话。"""
+        async with self.database.engine.connect() as connection:
+            return (
+                (
+                    await connection.execute(
+                        select(scenes)
+                        .join(sessions, sessions.c.scene_id == scenes.c.scene_id)
+                        .where(sessions.c.session_id == session_id)
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+
     async def create(self, values):
         async with self.database.engine.begin() as connection:
             return (
