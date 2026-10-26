@@ -142,6 +142,11 @@ export function HomePage() {
     if (location.sceneId === scene.id) setSelectedScene(scene)
     setEditing(null)
   }
+  function deleted(id: string) {
+    setScenes((items) => items.filter((scene) => scene.id !== id))
+    setEditing(null)
+    if (location.sceneId === id) navigate()
+  }
   const activeScene =
     selectedScene?.id === location.sceneId ? selectedScene : null
   const filtered = scenes.filter(
@@ -166,9 +171,7 @@ export function HomePage() {
           onNew={() => {
             if (activeScene) void enter(activeScene, true)
           }}
-          onEdit={() => {
-            if (activeScene) setEditing(activeScene)
-          }}
+          onSceneDeleted={deleted}
           onSceneChanged={saved}
           initialDraft={drafts[location.sessionId] ?? ''}
           onDraftChange={(value) => {
@@ -308,11 +311,7 @@ export function HomePage() {
           scene={editing === 'new' ? undefined : editing}
           onClose={() => setEditing(null)}
           onSaved={saved}
-          onDeleted={(id) => {
-            setScenes((items) => items.filter((scene) => scene.id !== id))
-            setEditing(null)
-            if (location.sceneId === id) navigate()
-          }}
+          onDeleted={deleted}
         />
       )}
     </>

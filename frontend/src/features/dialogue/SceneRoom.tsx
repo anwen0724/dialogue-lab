@@ -9,6 +9,7 @@ import { useDialogue } from './useDialogue'
 import { MessageComposer } from './MessageComposer'
 import { VoiceWave } from './VoiceWave'
 import { RoomSettings } from './RoomSettings'
+import { SceneEditor } from '../scenes/SceneEditor'
 import { loadPreferences, savePreferences } from './preferences'
 
 /** 沉浸页拥有画面布局和面板；一份连接状态驱动字幕、消息与输入。 */
@@ -18,7 +19,7 @@ export function SceneRoom({
   onBack,
   onSelect,
   onNew,
-  onEdit,
+  onSceneDeleted,
   onSceneChanged,
   initialDraft,
   onDraftChange,
@@ -28,14 +29,14 @@ export function SceneRoom({
   onBack: () => void
   onSelect: (id: string) => void
   onNew: () => void
-  onEdit: () => void
+  onSceneDeleted: (id: string) => void
   onSceneChanged: (scene: Scene) => void
   initialDraft: string
   onDraftChange: (text: string) => void
 }) {
   const { state, connection } = useDialogue(sessionId)
   const [panel, setPanel] = useState<
-    'sessions' | 'messages' | 'settings' | null
+    'sessions' | 'messages' | 'settings' | 'scene' | null
   >(null)
   const [controls, setControls] = useState(false)
   const [text, setText] = useState(initialDraft)
@@ -355,10 +356,7 @@ export function SceneRoom({
             preferences={preferences}
             onPreferencesChange={setPreferences}
             onSceneChanged={onSceneChanged}
-            onEdit={() => {
-              setPanel(null)
-              onEdit()
-            }}
+            onEdit={() => setPanel('scene')}
           >
             {!scene && (
               <label>
@@ -376,6 +374,19 @@ export function SceneRoom({
             )}
           </RoomSettings>
         </SidePanel>
+      )}
+      {panel === 'scene' && scene && (
+        <SceneEditor
+          scene={scene}
+          backLabel="返回设置"
+          onBack={() => setPanel('settings')}
+          onClose={() => setPanel(null)}
+          onSaved={(updated) => {
+            onSceneChanged(updated)
+            setPanel('settings')
+          }}
+          onDeleted={onSceneDeleted}
+        />
       )}
     </main>
   )

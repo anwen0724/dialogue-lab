@@ -18,6 +18,80 @@ afterEach(() => {
   localStorage.clear()
 })
 
+test('场景编辑可返回设置，保存后返回设置并更新人物名字', async () => {
+  installBrowserAudio()
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open')
+  }
+  window.history.replaceState(null, '', '?session=42')
+  let scene = {
+    scene_id: '3',
+    name: '窗边咖啡馆',
+    category: '英语交流',
+    character_name: 'Emma',
+    cover_image: null,
+    background_image: null,
+    status: 'active',
+    system_prompt: 'You are {{character_name}}.',
+  }
+  const session = {
+    session_id: '42',
+    scene_id: '3',
+    title: '练习',
+    status: 'active',
+    messages: [],
+  }
+  let saves = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith('/scenes/3') && options?.method === 'PATCH') {
+        saves++
+        scene = { ...scene, ...JSON.parse(String(options.body)) }
+      }
+      return new Response(
+        JSON.stringify(
+          url.endsWith('/scenes')
+            ? [scene]
+            : url.endsWith('/scenes/3')
+              ? scene
+              : url.endsWith('/presets')
+                ? ['general']
+                : url.endsWith('/sessions')
+                  ? [session]
+                  : session,
+        ),
+      )
+    }),
+  )
+  render(<HomePage />)
+  await screen.findByRole('heading', { name: '窗边咖啡馆' })
+  fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '场景资料与身份' }))
+  await screen.findByDisplayValue('Emma')
+  fireEvent.change(screen.getByLabelText('人物名字'), {
+    target: { value: '未保存' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
+  expect(screen.getByRole('heading', { name: '视觉氛围' })).toBeDefined()
+  expect(saves).toBe(0)
+  fireEvent.click(screen.getByRole('button', { name: '场景资料与身份' }))
+  await screen.findByDisplayValue('Emma')
+  fireEvent.change(screen.getByLabelText('人物名字'), {
+    target: { value: 'Alice' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '保存场景' }))
+  await screen.findByRole('heading', { name: '视觉氛围' })
+  expect(saves).toBe(1)
+  fireEvent.click(screen.getByRole('button', { name: '场景资料与身份' }))
+  await screen.findByDisplayValue('Alice')
+  fireEvent.click(screen.getByRole('button', { name: '关闭面板' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
 test('只有会话链接时仍恢复所属场景', async () => {
   installBrowserAudio()
   window.history.replaceState(null, '', '?session=42')

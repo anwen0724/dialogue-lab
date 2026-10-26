@@ -9,11 +9,15 @@ export function SceneEditor({
   onClose,
   onSaved,
   onDeleted,
+  onBack = onClose,
+  backLabel = '返回场景列表',
 }: {
   scene?: Scene
   onClose: () => void
   onSaved: (scene: Scene) => void
   onDeleted: (id: string) => void
+  onBack?: () => void
+  backLabel?: string
 }) {
   const [form, setForm] = useState<SceneForm>({
     name: scene?.name ?? '',
@@ -82,7 +86,11 @@ export function SceneEditor({
   }
   return (
     <SidePanel
-      title={scene ? '编辑场景' : '新建场景'}
+      title={scene ? '场景资料与身份' : '新建场景'}
+      backLabel={backLabel}
+      onBack={() => {
+        if (!busy) onBack()
+      }}
       onClose={() => {
         if (!busy) onClose()
       }}

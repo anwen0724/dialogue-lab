@@ -7,11 +7,15 @@ export function SidePanel({
   title,
   children,
   onClose,
+  onBack,
+  backLabel,
   className = '',
 }: {
   title: string
   children: ReactNode
   onClose: () => void
+  onBack?: () => void
+  backLabel?: string
   className?: string
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -39,7 +43,13 @@ export function SidePanel({
           onClose()
       }}
     >
-      <div className="panel-header">
+      <div className={`panel-header${onBack ? ' has-back' : ''}`}>
+        {onBack && (
+          <button className="panel-back" onClick={onBack}>
+            <span aria-hidden="true">←</span>
+            {backLabel}
+          </button>
+        )}
         <h2>{title}</h2>
         <button
           className="round-button"

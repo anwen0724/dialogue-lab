@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { uploadImage } from '../scenes/api'
 import type { Scene } from '../scenes/api'
 import type { Preferences } from './preferences'
+import { Icon } from '../../shared/ui/Icon'
 
 /** 对话偏好由浏览器保存；背景上传直接修改服务端场景。 */
 export function RoomSettings({
@@ -42,6 +43,16 @@ export function RoomSettings({
           {error}
         </p>
       )}
+      {scene && (
+        <section className="setting-section">
+          <h3>
+            <button className="setting-navigation" onClick={onEdit}>
+              场景资料与身份
+              <Icon name="arrow" />
+            </button>
+          </h3>
+        </section>
+      )}
       <section className="setting-section">
         <h3>视觉氛围</h3>
         {scene && (
@@ -64,14 +75,6 @@ export function RoomSettings({
                 }}
               />
             </label>
-            <button
-              className="text-button"
-              onClick={() => {
-                onEdit()
-              }}
-            >
-              编辑场景资料与身份指令
-            </button>
           </>
         )}
         <div className="slider-label">

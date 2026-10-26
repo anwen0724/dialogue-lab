@@ -21,7 +21,7 @@ function Dialogue({ sessionId }: { sessionId: string }) {
       onBack={() => {}}
       onSelect={() => {}}
       onNew={() => {}}
-      onEdit={() => {}}
+      onSceneDeleted={() => {}}
       onSceneChanged={() => {}}
     />
   )
@@ -58,7 +58,7 @@ function installApi() {
         new Response(
           JSON.stringify(
             url.endsWith('/presets')
-              ? ['general', 'english']
+              ? ['general', 'interview']
               : {
                   session_id: '1',
                   title: 'Practice',

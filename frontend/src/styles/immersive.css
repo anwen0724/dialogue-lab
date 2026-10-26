@@ -522,8 +522,8 @@ h1 {
 
 /* 音波没有背景或边框；隐藏时保留高度，避免消息上下跳动。 */
 .voice-wave {
-  width: min(280px, 68vw);
-  height: 64px;
+  width: min(200px, 48vw);
+  height: 48px;
   margin: 0 auto 12px;
   opacity: 0;
   transform: scaleY(0.04);
@@ -545,25 +545,9 @@ h1 {
   overflow: visible;
 }
 
-.wave-line {
-  stroke: #e2e4d7;
-  stroke-linecap: round;
-  stroke-width: 1.7;
-}
-
-.wave-line-back {
-  opacity: 0.2;
-  stroke-width: 1;
-}
-
-.wave-line-middle {
-  opacity: 0.45;
-  stroke-width: 1.2;
-}
-
-.wave-line-front {
+.voice-wave rect {
+  fill: #e1e3df;
   opacity: 0.9;
-  filter: drop-shadow(0 0 5px #e2e4d744);
 }
 
 .subtitle {
@@ -749,6 +733,23 @@ h1 {
   letter-spacing: -0.7px;
 }
 
+.panel-header.has-back {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+}
+
+.panel-back {
+  grid-column: 1 / -1;
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  color: inherit;
+  font-size: 14px;
+}
+
 .panel-header .eyebrow {
   font-size: 8px;
   color: #919c92;
@@ -775,8 +776,19 @@ h1 {
 
 .setting-section h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
+}
+
+.setting-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 
 .setting-section > p {
@@ -845,14 +857,6 @@ h1 {
   margin: 10px 0 0;
   line-height: 1.8;
   color: #7e8b81;
-}
-
-.text-button {
-  font-size: 10px;
-  color: #bbbfae;
-  padding: 11px 0 0;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .slider-label {
