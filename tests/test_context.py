@@ -1,9 +1,11 @@
 """验证上下文的公开输入输出，不替换内容组织逻辑。"""
 
+import json
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from ai import AssistantMessage, SimpleOptions, SystemMessage, TextContent, Usage, UserMessage
+from ai import AssistantMessage, SimpleOptions, SystemMessage, TextContent, Tool, Usage, UserMessage
 from model_provider import ScriptedAdapter
 from model_provider import test_models as make_models
 
@@ -26,8 +28,8 @@ def test_prompt_document_changes_apply_to_next_load(tmp_path):
     first = prompts.load("english")
     document.write_text("Keep every answer brief.", encoding="utf-8")
     second = prompts.load("english")
-    assert first.content == "You are an English tutor."
-    assert second.content == "Keep every answer brief."
+    assert first == "You are an English tutor."
+    assert second == "Keep every answer brief."
 
 
 @pytest.mark.asyncio
@@ -41,11 +43,86 @@ async def test_context_loads_current_instructions_and_current_input_once(session
     manager = ContextManager(session_service, models, model, SystemPrompts(tmp_path))
     try:
         prepared = await manager.build(session_id, "english")
-        assert prepared.messages == [
-            SystemMessage(content="Be an English tutor."),
+        context = await manager.to_context(prepared)
+        assert context.system_prompt == "Be an English tutor."
+        assert context.tools == []
+        assert context.messages == [
             UserMessage(content=[TextContent("Hello")]),
         ]
         assert len((await session_service.open(session_id))["messages"]) == 1
+    finally:
+        await models.aclose()
+
+
+@pytest.mark.asyncio
+async def test_transform_changes_only_request_messages_before_summary_conversion(
+    session_service, tmp_path
+):
+    (tmp_path / "default.md").write_text("Be brief.", encoding="utf-8")
+    models, model = make_models(ScriptedAdapter([]))
+    session_id = int((await session_service.create("Practice"))["session_id"])
+    await session_service.submit(session_id, uuid4(), "Original")
+    manager = ContextManager(session_service, models, model, SystemPrompts(tmp_path))
+
+    async def transform(messages, signal):
+        messages[0].content[0].text = "For this request"
+        return [CompactionSummary("Earlier facts"), *messages]
+
+    manager.transform_context = transform
+    try:
+        prepared = await manager.build(session_id, "default")
+        context = await manager.to_context(prepared)
+        assert context.messages == [
+            UserMessage(
+                "The conversation history before this point was compacted "
+                "into the following summary:"
+                "\n\n<summary>\nEarlier facts\n</summary>"
+            ),
+            UserMessage([TextContent("For this request")]),
+        ]
+        assert context.system_prompt == "Be brief."
+        assert prepared.messages == [UserMessage([TextContent("Original")])]
+        rebuilt = await manager.build(session_id, "default")
+        assert rebuilt.messages == prepared.messages
+        assert SystemPrompts(tmp_path).load("default") == "Be brief."
+    finally:
+        await models.aclose()
+
+
+@pytest.mark.asyncio
+async def test_transformed_request_usage_is_not_reused_for_full_session(session_service, tmp_path):
+    (tmp_path / "default.md").write_text("ssss", encoding="utf-8")
+    models, model = make_models(ScriptedAdapter([]))
+    model = replace(model, context_window=40)
+    session_id = int((await session_service.create("Practice"))["session_id"])
+    request_id = uuid4()
+    await session_service.submit(session_id, request_id, "u" * 400)
+
+    async def latest_only(messages, signal):
+        return [UserMessage("next")]
+
+    manager = ContextManager(
+        session_service,
+        models,
+        model,
+        SystemPrompts(tmp_path),
+        transform_context=latest_only,
+    )
+    try:
+        prepared = await manager.build(session_id, "default")
+        context = await manager.to_context(prepared, max_output_tokens=10)
+        assert context.messages == [UserMessage("next")]
+        await session_service.save_assistant(
+            session_id,
+            request_id,
+            AssistantMessage(
+                "test", "dialogue", "test", content=[TextContent("aaaa")], usage=Usage(total=2)
+            ),
+        )
+        manager.remember_usage(session_id, prepared)
+        rebuilt = await manager.build(session_id, "default")
+        # 全会话仍是 100 token 的用户内容、1 token 的回复和 1 token 的指令。
+        assert rebuilt.tokens == 102
     finally:
         await models.aclose()
 
@@ -57,7 +134,8 @@ async def test_compaction_changes_model_input_but_keeps_original_chat(
     tmp_path,
 ):
     (tmp_path / "english.md").write_text("Be brief.", encoding="utf-8")
-    models, model = make_models(ScriptedAdapter([["Earlier facts"]]))
+    adapter = ScriptedAdapter([["Earlier facts"]])
+    models, model = make_models(adapter)
     session_id = int((await session_service.create("Practice"))["session_id"])
     for text in ("a" * 40, "b" * 40, "c" * 16):
         await session_service.submit(session_id, uuid4(), text)
@@ -70,16 +148,24 @@ async def test_compaction_changes_model_input_but_keeps_original_chat(
         CompactionStore(database),
         CompactionSettings(keep_recent_tokens=4),
     )
+
+    async def request_only(messages, signal):
+        return [UserMessage("Request-only content")]
+
+    manager.transform_context = request_only
     try:
         prepared = await manager.build(session_id, "english")
         assert await manager.compact(session_id, prepared, SimpleOptions()) is True
         compacted = await manager.build(session_id, "english")
         assert compacted.messages == [
-            SystemMessage(content="Be brief."),
             CompactionSummary("Earlier facts"),
             UserMessage([TextContent("c" * 16)]),
         ]
         assert (await session_service.open(session_id))["messages"] == original
+        material = json.loads(adapter.inputs[0].messages[1].content)
+        assert material["conversation"][0]["content"][0]["text"] == "a" * 40
+        assert "Request-only content" not in adapter.inputs[0].messages[1].content
+        assert "Be brief." not in adapter.inputs[0].messages[0].content
     finally:
         await models.aclose()
 
@@ -89,12 +175,13 @@ def test_summary_is_converted_only_in_model_input():
     messages = [SystemMessage(content="Be brief."), summary, UserMessage("Continue")]
     model_input = convert_to_llm(messages)
     assert messages[1] is summary
-    assert model_input.messages[0] == messages[0]
-    assert model_input.messages[1] == UserMessage(
-        "The conversation history before this point was compacted into the following summary:"
+    assert model_input[0] == messages[0]
+    assert model_input[1] == UserMessage(
+        "The conversation history before this point was compacted "
+        "into the following summary:"
         "\n\n<summary>\nUser is preparing for an interview.\n</summary>"
     )
-    assert model_input.messages[2] == UserMessage("Continue")
+    assert model_input[2] == UserMessage("Continue")
 
 
 def test_compaction_keeps_recent_token_budget_and_can_split_a_turn():
@@ -118,6 +205,19 @@ def test_budget_uses_valid_usage_and_reestimates_after_context_change():
     ]
     assert estimate_context_tokens(messages, usage_valid=True) == 104
     assert estimate_context_tokens(messages, usage_valid=False) == 34
+
+
+@pytest.mark.parametrize("inline", [False, True])
+def test_budget_counts_instructions_and_tool_declarations(inline):
+    tool = Tool("lookup", "t" * 400, {"type": "object"})
+    tokens = estimate_context_tokens(
+        [SystemMessage(content="s" * 40, tools_added=[tool])] if inline else [],
+        system_prompt="" if inline else "s" * 40,
+        tools=[] if inline else [tool],
+        usage_valid=False,
+    )
+    # 指令和工具描述正文就已有 110 token，工具名称和 schema 仍需额外计入。
+    assert tokens > 110
 
 
 @pytest.mark.asyncio
@@ -230,6 +330,6 @@ async def test_context_uses_parent_path_and_excludes_inactive_branch(
     manager = ContextManager(session_service, models, model, SystemPrompts(tmp_path))
     try:
         prepared = await manager.build(session_id, "default")
-        assert [m.content[0].text for m in prepared.messages[1:]] == ["Root", "Current branch"]
+        assert [m.content[0].text for m in prepared.messages] == ["Root", "Current branch"]
     finally:
         await models.aclose()

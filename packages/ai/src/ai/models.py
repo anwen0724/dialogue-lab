@@ -15,7 +15,7 @@ from ai.hooks import DiagnosticEvent, observe
 from ai.provider import Provider
 from ai.stream import AssistantMessageStream
 from ai.types.events import AssistantMessageEvent
-from ai.types.messages import AssistantMessage, Context, TranscriptContext
+from ai.types.messages import AssistantMessage, Context
 from ai.types.model import Model
 from ai.types.options import AbortController, RequestOptions, SimpleOptions
 
@@ -114,7 +114,7 @@ class Models:
     def stream_simple(
         self,
         model: Model,
-        context: Context | TranscriptContext,
+        context: Context,
         options: SimpleOptions | None = None,
     ) -> AssistantMessageStream:
         """使用通用参数立即启动异步生产。"""
@@ -123,7 +123,7 @@ class Models:
     def stream(
         self,
         model: Model,
-        context: Context | TranscriptContext,
+        context: Context,
         options: RequestOptions | None = None,
     ) -> AssistantMessageStream:
         """使用协议专用参数，返回同一事件与终态契约。"""
@@ -252,7 +252,7 @@ class Models:
     async def complete_simple(
         self,
         model: Model,
-        context: Context | TranscriptContext,
+        context: Context,
         options: SimpleOptions | None = None,
     ) -> AssistantMessage:
         """等待通用参数调用的最终消息，不另发一次请求。"""
@@ -261,7 +261,7 @@ class Models:
     async def complete(
         self,
         model: Model,
-        context: Context | TranscriptContext,
+        context: Context,
         options: RequestOptions | None = None,
     ) -> AssistantMessage:
         """等待协议专用调用的最终消息。"""

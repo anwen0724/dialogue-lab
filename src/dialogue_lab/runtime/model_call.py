@@ -4,8 +4,10 @@ import asyncio
 from copy import deepcopy
 from dataclasses import replace
 
+from ai import Context
 
-async def call_model(models, model, context, options, emit):
+
+async def call_model(models, model, context: Context, options, emit):
     """仅交付正文；思考和工具参数留在最终消息，不送到语音通道。"""
     stream = models.stream_simple(model, context, options)
     draft = None

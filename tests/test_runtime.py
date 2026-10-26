@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 import speechio
-from ai import SimpleOptions, TextContent, UserMessage
+from ai import SimpleOptions, SystemMessage, TextContent, UserMessage
 from model_provider import ScriptedAdapter
 from model_provider import test_models as make_models
 
@@ -47,6 +47,105 @@ async def test_two_turns_share_persisted_context_without_duplicate_input(session
         assert second[3] == UserMessage([TextContent("Remember me?")])
         assert len((await session_service.open(session_id))["messages"]) == 4
         assert any(event["type"] == "text_delta" for event in events)
+    finally:
+        await scheduler.close()
+        await models.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stop_during_context_transform_finishes_without_model_request(
+    session_service, tmp_path
+):
+    (tmp_path / "default.md").write_text("Be brief.", encoding="utf-8")
+    started = asyncio.Event()
+
+    async def transform(messages, signal):
+        started.set()
+        await signal.wait()
+        return messages
+
+    adapter = ScriptedAdapter([])
+    models, model = make_models(adapter)
+    session_id = int((await session_service.create("Practice"))["session_id"])
+    manager = ContextManager(
+        session_service, models, model, SystemPrompts(tmp_path), transform_context=transform
+    )
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    scheduler = Scheduler(session_id, session_service, manager, models, model, emit)
+    try:
+        await scheduler.submit(Submit(uuid4(), "Hello", "default"))
+        await asyncio.wait_for(started.wait(), 2)
+        await asyncio.wait_for(scheduler.stop(), 2)
+        await asyncio.wait_for(scheduler.wait_idle(), 2)
+        assert adapter.inputs == []
+        assert any(event["type"] == "reply_stopped" for event in events)
+        assert not any(event["type"] == "error" for event in events)
+        assert len((await session_service.open(session_id))["messages"]) == 1
+    finally:
+        try:
+            await asyncio.wait_for(scheduler.close(), 2)
+        finally:
+            await models.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["success", "failure", "oversize"])
+async def test_runtime_uses_transformed_input_or_reports_preparation_failure(
+    session_service, tmp_path, outcome
+):
+    (tmp_path / "default.md").write_text("Be brief.", encoding="utf-8")
+
+    async def transform(messages, signal):
+        if outcome == "failure":
+            raise RuntimeError("transform failed")
+        return [UserMessage("x" * 400 if outcome == "oversize" else "Adjusted")]
+
+    adapter = ScriptedAdapter([["Reply"]])
+    models, model = make_models(adapter)
+    model = replace(model, context_window=50)
+    session_id = int((await session_service.create("Practice"))["session_id"])
+    manager = ContextManager(
+        session_service,
+        models,
+        model,
+        SystemPrompts(tmp_path),
+        settings=CompactionSettings(enabled=False),
+        transform_context=transform,
+    )
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    scheduler = Scheduler(
+        session_id,
+        session_service,
+        manager,
+        models,
+        model,
+        emit,
+        options=SimpleOptions(max_output_tokens=10),
+    )
+    try:
+        await scheduler.submit(Submit(uuid4(), "Original", "default"))
+        await asyncio.wait_for(scheduler.wait_idle(), 2)
+        if outcome == "success":
+            assert len(adapter.inputs) == 1
+            assert adapter.inputs[0].messages == [
+                SystemMessage(content="Be brief."),
+                UserMessage("Adjusted"),
+            ]
+        else:
+            assert adapter.inputs == []
+            code = "REPLY_FAILED" if outcome == "failure" else "CONTEXT_TOO_LARGE"
+            assert any(event.get("code") == code for event in events)
+        saved = (await session_service.open(session_id))["messages"]
+        assert saved[0]["message_json"]["model_content"] == [{"type": "text", "text": "Original"}]
+        assert len(saved) == (2 if outcome == "success" else 1)
     finally:
         await scheduler.close()
         await models.aclose()

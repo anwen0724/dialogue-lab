@@ -5,7 +5,6 @@ from dataclasses import replace
 
 from ai import AbortController, SimpleOptions
 
-from dialogue_lab.context.messages import convert_to_llm
 from dialogue_lab.runtime.model_call import call_model, stream_speech
 from dialogue_lab.sessions.types import SessionError
 
@@ -169,11 +168,11 @@ class Scheduler:
             prepared = await self._maybe_compact(request, prepared, controller)
             if controller.signal.aborted:
                 return
-            reserve = self.options.max_output_tokens or self.context.settings.reserve_tokens
-            if self.model.context_window is not None and (
-                prepared.tokens > self.model.context_window - reserve
-            ):
-                raise SessionError("CONTEXT_TOO_LARGE", "当前输入超过模型窗口，压缩后仍无法发送。")
+            context = await self.context.to_context(
+                prepared,
+                controller.signal,
+                max_output_tokens=self.options.max_output_tokens,
+            )
             await self._output(request_id, {"type": "reply_started"})
 
             async def audio_output(event):
@@ -192,7 +191,7 @@ class Scheduler:
             result = await call_model(
                 self.models,
                 self.model,
-                convert_to_llm(prepared.messages),
+                context,
                 replace(self.options, signal=controller.signal),
                 forward,
             )
@@ -210,6 +209,10 @@ class Scheduler:
             if not controller.signal.aborted and result.stop_reason not in ("error", "aborted"):
                 updated = await self.context.build(self.session_id, request.preset)
                 await self._maybe_compact(request, updated, controller)
+        except asyncio.CancelledError:
+            # 上下文准备也可响应停止；正常收尾，不能让取消冒泡终止命令调度器。
+            if not controller.signal.aborted:
+                raise
         except Exception as error:
             await self._output(
                 request_id,

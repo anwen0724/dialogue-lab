@@ -1,7 +1,7 @@
 """按 token 预算选择保留范围并生成摘要，不按消息条数截断。"""
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import ceil
 
 from ai import (
@@ -11,6 +11,7 @@ from ai import (
     SystemMessage,
     TextContent,
     ThinkingContent,
+    Tool,
     ToolCall,
     Usage,
     UserMessage,
@@ -28,7 +29,13 @@ class CompactionSettings:
     keep_recent_tokens: int = 20000
 
 
-def estimate_context_tokens(messages: list[ApplicationMessage], *, usage_valid: bool) -> int:
+def estimate_context_tokens(
+    messages: list[ApplicationMessage],
+    *,
+    usage_valid: bool,
+    system_prompt: str = "",
+    tools: list[Tool] | None = None,
+) -> int:
     """只在当前指令与投影仍匹配上次调用时使用模型用量。"""
     trailing = 0
     for message in reversed(messages):
@@ -43,7 +50,9 @@ def estimate_context_tokens(messages: list[ApplicationMessage], *, usage_valid: 
             if total > 0:
                 return total + trailing
         trailing += estimate_tokens(message)
-    return trailing
+    # 有效的模型用量已包含系统指令和工具；只有全量估算时才单独加上。
+    tool_chars = sum(len(json.dumps(asdict(tool), ensure_ascii=False)) for tool in tools or [])
+    return trailing + ceil(len(system_prompt) / 4) + ceil(tool_chars / 4)
 
 
 def find_cut_point(messages: list[ApplicationMessage], keep_recent_tokens: int) -> int:
@@ -74,6 +83,10 @@ def estimate_tokens(message: ApplicationMessage) -> int:
                 chars += len(block.name) + len(block.arguments_json)
     if isinstance(message, SystemMessage):
         chars += sum(len(section) for section in message.sections.values() if section)
+        chars += sum(
+            len(json.dumps(asdict(tool), ensure_ascii=False)) for tool in message.tools_added
+        )
+        chars += sum(len(name) for name in message.tools_removed)
     return ceil(chars / 4)
 
 

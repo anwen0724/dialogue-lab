@@ -4,16 +4,18 @@ from uuid import uuid4
 
 import pytest
 from ai import AssistantMessage, TextContent
+from conftest import TEST_DATABASE_URL
 from fastapi.testclient import TestClient
 
 from dialogue_lab.main import create_app
 from dialogue_lab.sessions.types import SessionError
 
 
+@pytest.mark.usefixtures("database")
 def test_created_session_can_be_reopened(monkeypatch):
     monkeypatch.setenv(
         "DIALOGUE_LAB_DATABASE_URL",
-        "postgresql+asyncpg://dialogue_test:dialogue_test@127.0.0.1:55432/dialogue_test",
+        TEST_DATABASE_URL,
     )
     with TestClient(create_app()) as client:
         response = client.post("/api/sessions", json={"title": "英语练习"})
