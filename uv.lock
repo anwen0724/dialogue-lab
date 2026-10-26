@@ -273,7 +273,7 @@ requires-dist = [
     { name = "dialogue-ai", extras = ["anthropic", "openai"], editable = "packages/ai" },
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
-    { name = "speechio", editable = "../speechio" },
+    { name = "speechio", specifier = ">=0.2.0,<0.3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
@@ -1082,7 +1082,7 @@ wheels = [
 [[package]]
 name = "speechio"
 version = "0.2.0"
-source = { editable = "../speechio" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "av" },
     { name = "httpx" },
@@ -1097,55 +1097,9 @@ dependencies = [
     { name = "webrtcvad-wheels" },
     { name = "websockets" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "av", specifier = ">=18" },
-    { name = "faster-whisper", marker = "extra == 'stt-whisper'", specifier = ">=1.2.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "huggingface-hub", specifier = ">=0.34" },
-    { name = "kokoro", marker = "extra == 'tts-kokoro'", specifier = ">=0.9.4" },
-    { name = "misaki", extras = ["en", "zh"], marker = "extra == 'tts-kokoro'", specifier = ">=0.9.4" },
-    { name = "numpy", specifier = ">=1.26.4" },
-    { name = "onnxruntime", specifier = ">=1.20.1" },
-    { name = "private-assistant-openwakeword", extras = ["onnx"], specifier = ">=0.6" },
-    { name = "pvporcupine", specifier = ">=4.0.3" },
-    { name = "pyaudio", specifier = ">=0.2.14" },
-    { name = "qwen-tts", marker = "extra == 'tts-qwen'", specifier = ">=0.1.1" },
-    { name = "sherpa-onnx", marker = "extra == 'stt-nemotron'", specifier = ">=1.13.4" },
-    { name = "soundfile", specifier = ">=0.13" },
-    { name = "soxr", specifier = ">=1" },
-    { name = "torch", marker = "extra == 'tts-kokoro'", specifier = ">=2.7" },
-    { name = "torch", marker = "extra == 'tts-qwen'", specifier = ">=2.7" },
-    { name = "torchaudio", marker = "extra == 'tts-qwen'", specifier = ">=2.7" },
-    { name = "webrtcvad-wheels", specifier = ">=2.0.14" },
-    { name = "websockets", specifier = ">=17.2" },
-]
-provides-extras = ["stt-whisper", "stt-nemotron", "tts-qwen", "tts-kokoro"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "psutil", specifier = ">=7,<8" },
-    { name = "ruff", specifier = ">=0.12" },
-    { name = "scipy", specifier = ">=1.15,<2" },
-]
-web = [
-    { name = "fastapi", specifier = ">=0.143.5,<0.144" },
-    { name = "httpx", specifier = ">=0.28.1,<0.29" },
-    { name = "pydantic", specifier = ">=2.14.1,<3" },
-    { name = "pydantic-settings", specifier = ">=2.16.0,<3" },
-    { name = "python-multipart", specifier = ">=0.0.32,<0.1" },
-    { name = "uvicorn", specifier = ">=0.54.0,<0.55" },
-    { name = "websockets", specifier = ">=17.2,<18" },
-]
-web-test = [
-    { name = "fastapi", specifier = ">=0.143.5,<0.144" },
-    { name = "httpx", specifier = ">=0.28.1,<0.29" },
-    { name = "pydantic", specifier = ">=2.14.1,<3" },
-    { name = "pydantic-settings", specifier = ">=2.16.0,<3" },
-    { name = "python-multipart", specifier = ">=0.0.32,<0.1" },
-    { name = "uvicorn", specifier = ">=0.54.0,<0.55" },
-    { name = "websockets", specifier = ">=17.2,<18" },
+sdist = { url = "https://files.pythonhosted.org/packages/fb/ed/8b417ff38a250bde36a7343ab8963e4d151e92e56e4a3ca163c13a1a796e/speechio-0.2.0.tar.gz", hash = "sha256:874c5d76ae5edf4ee984a0215a651f318972510c11d495fddea329708da63c51", size = 1448931, upload-time = "2026-10-24T06:36:07.697Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/27/798115c533a9197ee15e0e63314df18aa24b27ebd1af5b10bd1d21821056/speechio-0.2.0-py3-none-any.whl", hash = "sha256:c7838978fbc26e8ff5eb657df98c77a1af1ea9ccbfc6cb2aac6e6e7cda056708", size = 1246338, upload-time = "2026-10-24T06:35:52.43Z" },
 ]
 
 [[package]]

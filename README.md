@@ -24,7 +24,7 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 | 上下文管理 | 加载系统指令、组织有效消息、处理上下文预算与压缩，并转换为 AI 层输入 |
 | runtime | 调度输入处理、上下文准备、模型调用和语音输出，协调取消与消息保存 |
 | AI 层 | 提供统一模型调用接口，处理供应商协议与流式响应 |
-| 语音模块 | 通过 speechio 管理语音识别和合成 |
+| 语音模块 | 管理语音识别和合成 |
 | 存储模块 | 通过 PostgreSQL 保存会话、消息和压缩记录 |
 
 系统指令保存在 `prompts/`，在组织本次上下文时加载，不与会话绑定。修改指令正文后，下一次调用会使用新内容。
@@ -36,7 +36,6 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 | 前端 | React、TypeScript、Vite、浏览器 Web Audio / AudioWorklet |
 | 后端 | Python 3.12、FastAPI、Uvicorn |
 | 数据存储 | PostgreSQL 17、SQLAlchemy、asyncpg、Alembic |
-| 语音接入 | speechio |
 | 依赖与环境 | uv、npm、Docker Compose |
 
 ## 快速开始
@@ -46,14 +45,6 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 ### 1. 准备环境
 
 安装 Docker Desktop、uv，以及 Node.js 22.12+（22 系列）或 Node.js 24+ 和 npm。启动 Docker Desktop。Python 使用 3.12，uv 可下载所需解释器；本机不需要单独安装 PostgreSQL。
-
-项目依赖相邻目录中的 `speechio` 包，目录需按下面的方式放置：
-
-```text
-同一父目录/
-  dialogue-lab/
-  speechio/
-```
 
 ### 2. 安装依赖
 
@@ -143,7 +134,7 @@ docker compose stop
 
 默认对话模型为 DeepSeek 的 `deepseek-flash`。在 `.env` 中设置 `DIALOGUE_LAB_AI_PROVIDER` 和 `DIALOGUE_LAB_AI_MODEL` 可选择其他内置模型；OpenAI 和 Anthropic 分别使用 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`。
 
-默认语音识别使用 `qwen-audio-3.1-asr-flash-streaming`，语音合成使用 `qwen-audio-3.1-tts-flash`。模型和音色配置见 [.env.example](.env.example)。修改型号前，应确认 speechio 和对应服务支持该配置。
+默认语音识别使用 `qwen-audio-3.1-asr-flash-streaming`，语音合成使用 `qwen-audio-3.1-tts-flash`。模型和音色配置见 [.env.example](.env.example)。修改型号前，应确认语音接入支持该模型及音色。
 
 系统指令位于 [prompts/](prompts/)，页面选项来自其中的 Markdown 文件名。环境配置变更后需要重启后端，指令正文变更不需要。
 
@@ -156,7 +147,7 @@ src/dialogue_lab/
   sessions/               会话管理
   context/                上下文管理
   runtime/                调度与模型调用
-  voice/                  speechio 语音接入
+  voice/                  语音识别与合成接入
   storage/                数据库访问
   bootstrap.py            应用资源装配
   config.py               环境配置

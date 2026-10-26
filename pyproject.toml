@@ -10,7 +10,7 @@ dependencies = [
     "dialogue-ai[anthropic,openai]",
     "fastapi>=0.162.0",
     "pydantic-settings>=2.16.1",
-    "speechio",
+    "speechio>=0.2.0,<0.3",
     "sqlalchemy[asyncio]>=2.0,<3",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -34,7 +34,6 @@ testpaths = ["tests"]
 
 [tool.uv.sources]
 dialogue-ai = { path = "packages/ai", editable = true }
-speechio = { path = "../speechio", editable = true }
 
 [dependency-groups]
 dev = [
