@@ -34,3 +34,5 @@ class Settings(BaseSettings):
     tts_model: str = "qwen-audio-3.1-tts-flash"
     tts_voice: str = "longanhuan_v3.1"
     prompts_directory: Path = Path(__file__).resolve().parents[2] / "prompts"
+
+    data_directory: Path = Path(__file__).resolve().parents[2] / "data"

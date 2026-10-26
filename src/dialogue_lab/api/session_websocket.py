@@ -23,12 +23,22 @@ class SubmitCommand(Command):
     type: Literal["submit"]
     request_id: UUID
     text: str = Field(min_length=1, max_length=32000)
-    preset: str = Field(min_length=1, max_length=100)
+    preset: str = Field(default="general", min_length=1, max_length=100)
 
 
 class RecordingCommand(Command):
     type: Literal["start_recording"]
-    preset: str = Field(min_length=1, max_length=100)
+    preset: str = Field(default="general", min_length=1, max_length=100)
+
+
+class InteractionCommand(Command):
+    type: Literal["set_interaction"]
+    allow_interrupt: bool
+
+
+class StartCommand(Command):
+    type: Literal["start_session"]
+    request_id: UUID
 
 
 class StopCommand(Command):
@@ -42,7 +52,12 @@ class PlaybackCommand(Command):
 
 commands = TypeAdapter(
     Annotated[
-        SubmitCommand | RecordingCommand | StopCommand | PlaybackCommand,
+        SubmitCommand
+        | RecordingCommand
+        | StopCommand
+        | PlaybackCommand
+        | StartCommand
+        | InteractionCommand,
         Field(discriminator="type"),
     ]
 )
@@ -72,6 +87,7 @@ class SessionConnection:
 
     def __init__(self, socket, session_id):
         self.socket, self.session_id = socket, session_id
+        self.scene_id = None
         self.services = socket.app.state.services
         self.scheduler = None
         self.outgoing = asyncio.Queue()
@@ -79,9 +95,14 @@ class SessionConnection:
         self.tasks = set()
         self.recognition = None
         self.recording_task = None
+        self.recording_paused = False
         self.stop_recording_requested = False
 
     async def emit(self, event):
+        if event["type"] == "runtime_state" and event["busy"] and not event["allow_interrupt"]:
+            self.recording_paused = True
+            if self.recording_task is not None:
+                self.recording_task.cancel()
         if self.connected:
             self.outgoing.put_nowait(event)
 
@@ -92,6 +113,7 @@ class SessionConnection:
             self.scheduler = await self.services.claim(self.session_id, self.emit)
             # 取得控制权后重读，补齐 HTTP 查询与建立连接之间保存的消息。
             current = await self.services.sessions.open(self.session_id)
+            self.scene_id = int(current["scene_id"]) if current["scene_id"] is not None else None
             await self.emit(
                 {
                     "type": "connected",
@@ -115,6 +137,8 @@ class SessionConnection:
                 else:
                     try:
                         if packet.get("bytes") is not None:
+                            if self.recording_paused:
+                                continue
                             audio = packet["bytes"]
                             if (
                                 self.recognition is None
@@ -130,7 +154,20 @@ class SessionConnection:
                         if isinstance(command, SubmitCommand):
                             self.spawn(
                                 self.scheduler.submit(
-                                    Submit(command.request_id, command.text, command.preset)
+                                    Submit(
+                                        command.request_id,
+                                        command.text,
+                                        await self.resolve_preset(command.preset),
+                                    )
+                                ),
+                                str(command.request_id),
+                            )
+                        elif isinstance(command, InteractionCommand):
+                            await self.scheduler.set_interaction(command.allow_interrupt)
+                        elif isinstance(command, StartCommand):
+                            self.spawn(
+                                self.scheduler.start(
+                                    command.request_id, await self.resolve_preset("general")
                                 ),
                                 str(command.request_id),
                             )
@@ -139,8 +176,11 @@ class SessionConnection:
                         elif command.type == "playback_finished":
                             self.spawn(self.scheduler.playback_finished(str(command.request_id)))
                         elif isinstance(command, RecordingCommand):
+                            if self.scheduler.input_blocked:
+                                raise SessionError("REPLY_BUSY", "请等待本轮回复结束。")
                             if self.recording_task is not None:
                                 raise SessionError("RECORDING_BUSY", "录音尚未结束。")
+                            self.recording_paused = False
                             self.stop_recording_requested = False
                             self.recording_task = asyncio.create_task(self.record(command.preset))
                         elif command.type == "stop_recording":
@@ -178,10 +218,16 @@ class SessionConnection:
             writer.cancel()
             await asyncio.gather(writer, return_exceptions=True)
 
+    async def resolve_preset(self, fallback):
+        if self.scene_id is None:
+            return fallback
+        return await self.services.scenes.prompt_key(self.scene_id)
+
     async def record(self, preset):
         """final 由服务端直接提交；临时结果仅用于展示，结束录音保留尾句。"""
+        epoch = self.scheduler.input_epoch
         try:
-            await asyncio.to_thread(self.services.prompts.load, preset)
+            await asyncio.to_thread(self.services.prompts.load, await self.resolve_preset(preset))
             settings = self.services.settings
             key = settings.stt_api_key.get_secret_value()
             if not key:
@@ -203,7 +249,13 @@ class SessionConnection:
                         if event["text"].strip():
                             self.spawn(
                                 self.scheduler.submit(
-                                    Submit(uuid4(), event["text"], preset, "voice")
+                                    Submit(
+                                        uuid4(),
+                                        event["text"],
+                                        await self.resolve_preset(preset),
+                                        "voice",
+                                        epoch,
+                                    )
                                 )
                             )
                     else:
@@ -221,7 +273,7 @@ class SessionConnection:
         finally:
             self.recognition = None
             self.recording_task = None
-            await self.emit({"type": "recording_stopped"})
+            await self.emit({"type": "recording_stopped", "paused": self.recording_paused})
 
     async def write(self):
         while True:

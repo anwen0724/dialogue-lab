@@ -8,8 +8,36 @@ import {
   fireEvent,
 } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
-import { Dialogue } from '../src/features/dialogue/Dialogue'
+import { SceneRoom } from '../src/features/dialogue/SceneRoom'
 import { BrowserSocket, installBrowserAudio } from './browserAudio'
+
+function Dialogue({ sessionId }: { sessionId: string }) {
+  return (
+    <SceneRoom
+      sessionId={sessionId}
+      scene={null}
+      initialDraft=""
+      onDraftChange={() => {}}
+      onBack={() => {}}
+      onSelect={() => {}}
+      onNew={() => {}}
+      onEdit={() => {}}
+      onSceneChanged={() => {}}
+    />
+  )
+}
+function revealControls() {
+  const button = screen.queryByRole('button', {
+    name: '展开底部操作和文字输入',
+  })
+  if (button) fireEvent.click(button)
+}
+function commands(socket: BrowserSocket) {
+  return socket.sent.filter(
+    (item) =>
+      typeof item !== 'string' || JSON.parse(item).type !== 'set_interaction',
+  )
+}
 
 const savedUser = {
   message_id: '11',
@@ -47,6 +75,7 @@ function installApi() {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  localStorage.clear()
 })
 
 test('打开会话显示保存的消息，不重新提交或自动播放', async () => {
@@ -63,7 +92,7 @@ test('打开会话显示保存的消息，不重新提交或自动播放', async
       messages: [savedUser],
     }),
   )
-  expect(BrowserSocket.instances[0].sent).toEqual([])
+  expect(commands(BrowserSocket.instances[0])).toEqual([])
 })
 
 test('发送文字后显示回复增量，并由保存消息替换临时回复', async () => {
@@ -80,12 +109,16 @@ test('发送文字后显示回复增量，并由保存消息替换临时回复',
       messages: [savedUser],
     }),
   )
+  revealControls()
   fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), {
     target: { value: 'Hello' },
   })
-  fireEvent.click(screen.getByRole('button', { name: '发送' }))
-  await waitFor(() => expect(socket.sent.length).toBe(1))
-  const command = JSON.parse(String(socket.sent[0]))
+  fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+  await waitFor(() => expect(commands(socket).length).toBe(1))
+  const command = JSON.parse(String(commands(socket)[0]))
+  fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), {
+    target: { value: '下一句草稿' },
+  })
   act(() => {
     socket.deliver({
       type: 'message_saved',
@@ -122,6 +155,10 @@ test('发送文字后显示回复增量，并由保存消息替换临时回复',
     }),
   )
   expect(screen.getAllByText('Hello back')).toHaveLength(1)
+  expect(
+    (screen.getByRole('textbox', { name: '输入消息' }) as HTMLTextAreaElement)
+      .value,
+  ).toBe('下一句草稿')
 })
 
 test('结束录音发送尾部 PCM 并等待确认，final 不由浏览器重复提交', async () => {
@@ -138,19 +175,23 @@ test('结束录音发送尾部 PCM 并等待确认，final 不由浏览器重复
       messages: [savedUser],
     }),
   )
+  fireEvent.click(
+    screen.getByRole('button', { name: '展开底部操作和文字输入' }),
+  )
+  revealControls()
   fireEvent.click(screen.getByRole('button', { name: '开始说话' }))
-  await waitFor(() => expect(socket.sent.length).toBe(1))
+  await waitFor(() => expect(commands(socket).length).toBe(1))
   act(() => socket.deliver({ type: 'recording_ready' }))
-  fireEvent.click(screen.getByRole('button', { name: '结束录音' }))
-  await waitFor(() => expect(socket.sent.length).toBe(3))
-  expect(socket.sent[1]).toBeInstanceOf(ArrayBuffer)
-  expect(JSON.parse(String(socket.sent[2])).type).toBe('stop_recording')
+  fireEvent.click(screen.getByRole('button', { name: '停止说话' }))
+  await waitFor(() => expect(commands(socket).length).toBe(3))
+  expect(commands(socket)[1]).toBeInstanceOf(ArrayBuffer)
+  expect(JSON.parse(String(commands(socket)[2])).type).toBe('stop_recording')
   act(() => {
     socket.deliver({ type: 'final', segment_id: 1, text: 'Tail' })
     socket.deliver({ type: 'recording_stopped' })
   })
   expect(
-    socket.sent
+    commands(socket)
       .filter((item) => typeof item === 'string')
       .map((item) => JSON.parse(String(item)).type),
   ).toEqual(['start_recording', 'stop_recording'])
@@ -174,12 +215,14 @@ test('麦克风权限拒绝后保留会话，并允许重试录音', async () =>
       messages: [savedUser],
     }),
   )
+  revealControls()
   fireEvent.click(screen.getByRole('button', { name: '开始说话' }))
   await waitFor(() =>
     expect(screen.getByRole('alert').textContent).toContain('麦克风权限'),
   )
+  revealControls()
   fireEvent.click(screen.getByRole('button', { name: '开始说话' }))
-  await waitFor(() => expect(socket.sent).toHaveLength(1))
+  await waitFor(() => expect(commands(socket)).toHaveLength(1))
 })
 
 test('取消权限等待后释放晚到设备，不启动服务端录音', async () => {
@@ -203,11 +246,12 @@ test('取消权限等待后释放晚到设备，不启动服务端录音', async
       messages: [savedUser],
     }),
   )
+  revealControls()
   fireEvent.click(screen.getByRole('button', { name: '开始说话' }))
-  fireEvent.click(screen.getByRole('button', { name: '取消准备' }))
+  fireEvent.click(screen.getByRole('button', { name: '停止说话' }))
   await act(async () => grant?.({ getTracks: () => [track] }))
   expect(track.stop).toHaveBeenCalled()
-  expect(socket.sent).toHaveLength(0)
+  expect(commands(socket)).toHaveLength(0)
 })
 
 test('切换会话后释放旧录音并忽略旧连接的迟到消息', async () => {
@@ -224,8 +268,9 @@ test('切换会话后释放旧录音并忽略旧连接的迟到消息', async ()
       messages: [savedUser],
     }),
   )
+  revealControls()
   fireEvent.click(screen.getByRole('button', { name: '开始说话' }))
-  await waitFor(() => expect(old.sent).toHaveLength(1))
+  await waitFor(() => expect(commands(old)).toHaveLength(1))
   view.rerender(<Dialogue key="2" sessionId="2" />)
   await waitFor(() => expect(BrowserSocket.instances).toHaveLength(2))
   act(() => old.deliver({ type: 'partial', text: 'Old audio' }))
@@ -256,13 +301,14 @@ test('播放设备不可用时仍提交文字，显示错误且不重复模型�
       messages: [savedUser],
     }),
   )
+  revealControls()
   fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), {
     target: { value: 'Hello' },
   })
-  fireEvent.click(screen.getByRole('button', { name: '发送' }))
-  await waitFor(() => expect(socket.sent).toHaveLength(1))
+  fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+  await waitFor(() => expect(commands(socket)).toHaveLength(1))
   expect(screen.getByRole('alert').textContent).toContain('播放设备不可用')
-  expect(JSON.parse(String(socket.sent[0])).text).toBe('Hello')
+  expect(JSON.parse(String(commands(socket)[0])).text).toBe('Hello')
 })
 
 test('连接确认采用服务端最新消息，补齐 HTTP 读取之后保存的回复', async () => {
@@ -290,4 +336,38 @@ test('连接确认采用服务端最新消息，补齐 HTTP 读取之后保存�
     }),
   )
   expect(screen.getByText('Saved while reconnecting')).toBeDefined()
+})
+
+test('设置面板切换打断并保存当前浏览器偏好', async () => {
+  installApi()
+  installBrowserAudio()
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open')
+  }
+  render(<Dialogue sessionId="1" />)
+  await waitFor(() => expect(BrowserSocket.instances).toHaveLength(1))
+  const socket = BrowserSocket.instances[0]
+  act(() =>
+    socket.deliver({
+      type: 'connected',
+      can_control: true,
+      messages: [savedUser],
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
+  fireEvent.click(screen.getByRole('switch', { name: '允许打断回复' }))
+  expect(JSON.parse(String(socket.sent.at(-1)))).toEqual({
+    type: 'set_interaction',
+    allow_interrupt: false,
+  })
+  fireEvent.click(screen.getByRole('button', { name: '关闭面板' }))
+  fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(
+    screen
+      .getByRole('switch', { name: '允许打断回复' })
+      .getAttribute('aria-checked'),
+  ).toBe('false')
 })

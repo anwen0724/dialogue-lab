@@ -4,8 +4,13 @@ export async function requestJson(
   options: RequestInit = {},
 ): Promise<unknown> {
   const response = await fetch(`/api${path}`, options)
-  if (!response.ok)
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null)
+    if (isRecord(body) && typeof body.message === 'string')
+      throw new Error(body.message)
+    if (response.status === 422) throw new Error('请检查填写内容和图片格式。')
     throw new Error(`请求失败（${response.status}），请检查后端与数据库。`)
+  }
   return response.json()
 }
 

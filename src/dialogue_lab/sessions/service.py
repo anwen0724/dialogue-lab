@@ -10,11 +10,11 @@ class SessionService:
     def __init__(self, store: SessionStore):
         self.store = store
 
-    async def create(self, title: str) -> dict:
-        return session_view(await self.store.create(title))
+    async def create(self, title: str, scene_id: int | None = None) -> dict:
+        return session_view(await self.store.create(title, scene_id))
 
-    async def list(self) -> list[dict]:
-        return [session_view(row) for row in await self.store.list()]
+    async def list(self, scene_id=None) -> list[dict]:
+        return [session_view(row) for row in await self.store.list(scene_id)]
 
     async def path(self, session_id: int):
         await self.store.get(session_id)
@@ -46,7 +46,7 @@ class SessionService:
     async def submit(self, session_id, request_id, text, source="text"):
         """保存确认输入，返回消息及是否首次提交。"""
         text = text.strip()
-        if not text or source not in ("text", "voice"):
+        if not text or source not in ("text", "voice", "opening"):
             raise SessionError("INVALID_INPUT", "请提交非空文字或确认后的语音内容。", 422)
         content = [{"type": "text", "text": text}]
         row, created = await self.store.append(
@@ -54,7 +54,7 @@ class SessionService:
             request_id,
             "user_message",
             {
-                "display_content": content,
+                "display_content": [] if source == "opening" else content,
                 "model_content": content,
                 "source": source,
             },

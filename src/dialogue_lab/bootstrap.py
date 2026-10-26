@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from pathlib import Path
 
 from ai import AuthContext, ModelAuth, Models, SimpleOptions
 from ai.providers.anthropic import create_anthropic_provider
@@ -12,9 +13,11 @@ from dotenv import dotenv_values
 from dialogue_lab.context.manager import ContextManager
 from dialogue_lab.context.system_prompt import SystemPrompts
 from dialogue_lab.runtime.scheduler import Scheduler
+from dialogue_lab.scenes.service import SceneService
 from dialogue_lab.sessions.service import SessionService
 from dialogue_lab.storage.compaction_store import CompactionStore
 from dialogue_lab.storage.database import Database
+from dialogue_lab.storage.scene_store import SceneStore
 from dialogue_lab.storage.session_store import SessionStore
 from dialogue_lab.voice.synthesis import Synthesis
 
@@ -42,7 +45,12 @@ class Services:
             create_anthropic_provider,
         ):
             self.models.set_provider(factory(), owns_provider=True)
-        self.prompts = SystemPrompts(settings.prompts_directory)
+        self.prompts = SystemPrompts(
+            settings.prompts_directory,
+            Path(__file__).parent / "resources" / "prompts",
+            settings.data_directory / "prompts",
+        )
+        self.scenes = SceneService(SceneStore(self.database), self.prompts, settings.data_directory)
         self.controllers = {}
         self._recovery_lock = asyncio.Lock()
         self._recovered = False

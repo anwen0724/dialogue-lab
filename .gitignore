@@ -16,3 +16,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.tsbuildinfo
+
+# User scene documents and uploaded media.
+/data/

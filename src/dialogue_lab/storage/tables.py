@@ -1,4 +1,4 @@
-"""已确认的四张表；消息内容和路径分开保存，不保存系统指令。"""
+"""场景与会话持久结构；消息内容和路径分开保存，身份正文保存在文档中。"""
 
 from sqlalchemy import (
     BigInteger,
@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Identity,
+    Index,
     MetaData,
     Table,
     Text,
@@ -31,10 +32,29 @@ def timestamp(name, *, nullable=False, default=False):
     )
 
 
+scenes = Table(
+    "scenes",
+    metadata,
+    identity("scene_id"),
+    Column("name", Text, nullable=False),
+    Column("category", Text, nullable=False),
+    Column("character_name", Text, nullable=False),
+    Column("cover_image", Text),
+    Column("background_image", Text),
+    Column("prompt_key", Text, nullable=False, unique=True),
+    Column("status", Text, nullable=False, server_default="active"),
+    timestamp("created_at", default=True),
+    timestamp("updated_at", default=True),
+    CheckConstraint("status IN ('active', 'archived')", name="scene_status"),
+)
+
+
 sessions = Table(
     "sessions",
     metadata,
     identity("session_id"),
+    Column("scene_id", BigInteger),
+    ForeignKeyConstraint(["scene_id"], ["scenes.scene_id"], name="session_scene"),
     Column("title", Text, nullable=False),
     Column("status", Text, nullable=False, server_default="active"),
     Column("active_entry_id", BigInteger),
@@ -48,6 +68,8 @@ sessions = Table(
         name="session_status",
     ),
 )
+
+Index("session_scene_updated", sessions.c.scene_id, sessions.c.updated_at)
 
 messages = Table(
     "session_messages",

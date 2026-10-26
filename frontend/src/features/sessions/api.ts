@@ -4,6 +4,9 @@ export type Session = {
   id: string
   title: string
   status: 'active' | 'archived'
+  sceneId: string | null
+  latestMessage: string
+  messageCount: number
 }
 export type Message = {
   id: string
@@ -11,6 +14,7 @@ export type Message = {
   role: 'user' | 'assistant'
   text: string
   status: 'completed' | 'cancelled' | 'failed'
+  source?: string
 }
 
 export function parseMessage(value: unknown): Message {
@@ -49,6 +53,7 @@ export function parseMessage(value: unknown): Message {
     role,
     text,
     status,
+    source: typeof payload.source === 'string' ? payload.source : undefined,
   }
 }
 
@@ -61,7 +66,21 @@ function parseSession(value: unknown): Session {
     (value.status !== 'active' && value.status !== 'archived')
   )
     throw new Error('会话格式无效。')
-  return { id: value.session_id, title: value.title, status: value.status }
+  if (
+    value.scene_id != null &&
+    (typeof value.scene_id !== 'string' || !/^\d+$/.test(value.scene_id))
+  )
+    throw new Error('会话场景无效。')
+  return {
+    id: value.session_id,
+    title: value.title,
+    status: value.status,
+    sceneId: typeof value.scene_id === 'string' ? value.scene_id : null,
+    latestMessage:
+      typeof value.latest_message === 'string' ? value.latest_message : '',
+    messageCount:
+      typeof value.message_count === 'number' ? value.message_count : 0,
+  }
 }
 
 export async function getSession(id: string, signal: AbortSignal) {
@@ -74,18 +93,21 @@ export async function getSession(id: string, signal: AbortSignal) {
   return { ...session, messages: value.messages.map(parseMessage) }
 }
 
-export async function listSessions(signal: AbortSignal) {
-  const value = await requestJson('/sessions', { signal })
+export async function listSessions(signal?: AbortSignal, sceneId?: string) {
+  const value = await requestJson(
+    sceneId ? `/sessions?scene_id=${sceneId}` : '/sessions',
+    { signal },
+  )
   if (!Array.isArray(value)) throw new Error('会话列表无效。')
   return value.map(parseSession)
 }
 
-export async function createSession(title: string) {
+export async function createSession(title: string, sceneId?: string) {
   return parseSession(
     await requestJson('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, scene_id: sceneId }),
     }),
   )
 }

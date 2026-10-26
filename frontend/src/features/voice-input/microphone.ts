@@ -5,6 +5,8 @@ export class Microphone {
   private stream?: MediaStream
   private source?: MediaStreamAudioSourceNode
   private node?: AudioWorkletNode
+  private analyser?: AnalyserNode
+  private samples = new Float32Array(256)
   private disposed = false
   private stopWait?: {
     resolve: () => void
@@ -99,8 +101,21 @@ export class Microphone {
   start(): void {
     if (!this.stream || !this.node || this.disposed) return
     this.source = this.context.createMediaStreamSource(this.stream)
+    this.analyser = this.context.createAnalyser()
+    this.analyser.fftSize = 256
+    this.source.connect(this.analyser)
     this.source.connect(this.node)
     this.node.connect(this.context.destination)
+  }
+
+  /** 麦克风已开启但没有声音时返回接近零的振幅。 */
+  getAmplitude(): number {
+    if (!this.analyser || this.disposed) return 0
+    this.analyser.getFloatTimeDomainData(this.samples)
+    return Math.sqrt(
+      this.samples.reduce((sum, value) => sum + value * value, 0) /
+        this.samples.length,
+    )
   }
 
   /** 先停止采集，再等待 Worklet 发完尾部样本；由调用方随后发送 stop。 */
@@ -136,6 +151,7 @@ export class Microphone {
     }
     this.stream?.getTracks().forEach((track) => track.stop())
     this.source?.disconnect()
+    this.analyser?.disconnect()
     this.node?.disconnect()
     this.node?.port.close()
     if (this.context.state !== 'closed') {

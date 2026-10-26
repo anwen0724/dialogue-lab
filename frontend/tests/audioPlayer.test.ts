@@ -8,6 +8,21 @@ class AudioDevice {
     onended: (() => void) | null
     buffer?: { duration: number }
   }[] = []
+  static gain = { value: 1 }
+  static signal = 0
+  createGain() {
+    return { gain: AudioDevice.gain, connect() {}, disconnect() {} }
+  }
+  createAnalyser() {
+    return {
+      fftSize: 256,
+      connect() {},
+      disconnect() {},
+      getFloatTimeDomainData(buffer: Float32Array) {
+        buffer.fill(AudioDevice.signal)
+      },
+    }
+  }
   currentTime = 1
   state = 'running'
   destination = {}
@@ -70,4 +85,17 @@ test('停止清空排队音频，新的回复不接受旧音频', async () => {
   player.finish('old')
   expect(AudioDevice.sources).toHaveLength(1)
   expect(finished).not.toHaveBeenCalled()
+})
+
+test('音量作用于实际输出，音波读取实时音频而非网络接收状态', async () => {
+  vi.stubGlobal('AudioContext', AudioDevice)
+  const player = new AudioPlayer(() => {})
+  player.setVolume(0.4)
+  await player.unlock()
+  expect(AudioDevice.gain.value).toBe(0.4)
+  AudioDevice.signal = 0
+  expect(player.getAmplitude()).toBe(0)
+  AudioDevice.signal = 0.25
+  expect(player.getAmplitude()).toBeCloseTo(0.25)
+  await player.dispose()
 })

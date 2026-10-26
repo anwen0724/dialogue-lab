@@ -9,7 +9,7 @@ router = APIRouter()
 
 @router.post("/sessions", status_code=201)
 async def create_session(body: SessionCreate, request: Request):
-    return await request.app.state.sessions.create(body.title)
+    return await request.app.state.sessions.create(body.title, body.scene_id)
 
 
 @router.get("/sessions/{session_id}")
@@ -18,8 +18,8 @@ async def get_session(session_id: int, request: Request):
 
 
 @router.get("/sessions")
-async def list_sessions(request: Request):
-    return await request.app.state.sessions.list()
+async def list_sessions(request: Request, scene_id: int | None = None):
+    return await request.app.state.sessions.list(scene_id)
 
 
 @router.get("/presets")

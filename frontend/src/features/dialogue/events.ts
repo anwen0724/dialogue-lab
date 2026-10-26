@@ -59,8 +59,23 @@ export function parseEvent(value: unknown) {
         requestId: requestId(),
         sampleRate: value.sample_rate,
       } as const
-    case 'recording_ready':
+    case 'runtime_state':
+      if (
+        typeof value.busy !== 'boolean' ||
+        typeof value.allow_interrupt !== 'boolean'
+      )
+        throw new Error('运行状态无效。')
+      return {
+        type: 'runtime_state',
+        busy: value.busy,
+        allowInterrupt: value.allow_interrupt,
+      } as const
     case 'recording_stopped':
+      return {
+        type: 'recording_stopped',
+        paused: value.paused === true,
+      } as const
+    case 'recording_ready':
     case 'compaction_started':
     case 'compaction_finished':
       return { type: value.type } as const

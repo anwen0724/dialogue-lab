@@ -1,9 +1,10 @@
 """在短事务中读取和保存会话；后续消息写入也从这里维护路径。"""
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, literal, select, update
 
 from dialogue_lab.sessions.types import SessionError
 from dialogue_lab.storage.database import Database
+from dialogue_lab.storage.scene_store import get_scene
 from dialogue_lab.storage.tables import compactions, entries, messages, sessions
 
 
@@ -11,10 +12,18 @@ class SessionStore:
     def __init__(self, database: Database):
         self.database = database
 
-    async def create(self, title: str):
+    async def create(self, title: str, scene_id=None):
         async with self.database.engine.begin() as connection:
+            if scene_id is not None:
+                scene = await get_scene(connection, scene_id, lock=True)
+                if scene["status"] != "active":
+                    raise SessionError("SCENE_ARCHIVED", "已归档的场景不能新建会话。")
             return (
-                (await connection.execute(insert(sessions).values(title=title).returning(sessions)))
+                (
+                    await connection.execute(
+                        insert(sessions).values(title=title, scene_id=scene_id).returning(sessions)
+                    )
+                )
                 .mappings()
                 .one()
             )
@@ -34,19 +43,49 @@ class SessionStore:
                 raise SessionError("SESSION_NOT_FOUND", "会话不存在。", 404)
             return row
 
-    async def list(self):
+    async def list(self, scene_id=None):
+        """一次列表读取加一次路径查询，避免逐个会话查询消息。"""
+        query = select(sessions).order_by(
+            sessions.c.updated_at.desc(), sessions.c.session_id.desc()
+        )
+        if scene_id is not None:
+            query = query.where(sessions.c.scene_id == scene_id)
         async with self.database.engine.connect() as connection:
-            return (
-                (
-                    await connection.execute(
-                        select(sessions).order_by(
-                            sessions.c.updated_at.desc(), sessions.c.session_id.desc()
-                        )
-                    )
-                )
-                .mappings()
-                .all()
+            rows = [dict(row) for row in (await connection.execute(query)).mappings()]
+            if not rows:
+                return rows
+            path = (
+                select(entries, literal(0).label("depth"))
+                .join(sessions, sessions.c.active_entry_id == entries.c.entry_id)
+                .where(sessions.c.session_id.in_([row["session_id"] for row in rows]))
+                .cte("listing_path", recursive=True)
             )
+            path = path.union_all(
+                select(entries, (path.c.depth + 1).label("depth")).join(
+                    path, entries.c.entry_id == path.c.parent_entry_id
+                )
+            )
+            content = (
+                await connection.execute(
+                    select(path.c.session_id, messages.c.message_kind, messages.c.message_json)
+                    .join(messages, path.c.message_id == messages.c.message_id)
+                    .order_by(path.c.depth)
+                )
+            ).mappings()
+            lookup = {row["session_id"]: row for row in rows}
+            for row in rows:
+                row.update(message_count=0, latest_message="")
+            for message in content:
+                payload = message["message_json"]
+                if payload.get("source") == "opening":
+                    continue
+                row = lookup[message["session_id"]]
+                blocks = payload.get("display_content", payload.get("content", []))
+                text = "".join(block.get("text", "") for block in blocks if block["type"] == "text")
+                if row["message_count"] == 0:
+                    row["latest_message"] = text[:160]
+                row["message_count"] += 1
+            return rows
 
     async def find_user_request(self, session_id, request_id):
         async with self.database.engine.connect() as connection:
@@ -85,6 +124,26 @@ class SessionStore:
                 if existing["message_json"] != payload:
                     raise SessionError("REQUEST_CONFLICT", "同一请求标识不能用于不同的消息内容。")
                 return existing, False
+            # 只有首条真实输入能改标题；应用开场不算用户发言。
+            title = session["title"]
+            if (
+                kind == "user_message"
+                and payload.get("source") != "opening"
+                and session["scene_id"]
+            ):
+                previous = (
+                    await connection.execute(
+                        select(messages.c.message_id)
+                        .where(
+                            messages.c.session_id == session_id,
+                            messages.c.message_kind == "user_message",
+                            messages.c.message_json["source"].astext != "opening",
+                        )
+                        .limit(1)
+                    )
+                ).first()
+                if previous is None:
+                    title = payload["model_content"][0]["text"][:30]
             row = (
                 (
                     await connection.execute(
@@ -117,7 +176,7 @@ class SessionStore:
             await connection.execute(
                 update(sessions)
                 .where(sessions.c.session_id == session_id)
-                .values(active_entry_id=entry_id, updated_at=func.now())
+                .values(active_entry_id=entry_id, updated_at=func.now(), title=title)
             )
             return row, True
 

@@ -376,11 +376,89 @@ async def test_input_exceeding_window_is_not_silently_truncated_or_sent(
         options=SimpleOptions(max_output_tokens=10),
     )
     try:
+        await scheduler.set_interaction(False)
         await scheduler.submit(Submit(uuid4(), "a" * 400, "default"))
         await asyncio.wait_for(scheduler.wait_idle(), 2)
         assert adapter.inputs == []
         assert any(event.get("code") == "CONTEXT_TOO_LARGE" for event in events)
         assert len((await session_service.open(session_id))["messages"]) == 1
+        assert events[-1]["type"] == "runtime_state"
+        assert events[-1]["busy"] is False
+    finally:
+        await scheduler.close()
+        await models.aclose()
+
+
+@pytest.mark.asyncio
+async def test_opening_is_application_message_and_only_generated_once(session_service, tmp_path):
+    (tmp_path / "default.md").write_text("你是 Emma。", encoding="utf-8")
+    adapter = ScriptedAdapter([["Hello, how are you?"]])
+    models, model = make_models(adapter)
+    session_id = int((await session_service.create("新会话"))["session_id"])
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    scheduler = Scheduler(
+        session_id,
+        session_service,
+        ContextManager(session_service, models, model, SystemPrompts(tmp_path)),
+        models,
+        model,
+        emit,
+    )
+    try:
+        await scheduler.start(uuid4(), "default")
+        await scheduler.wait_idle()
+        await scheduler.start(uuid4(), "default")
+        assert len(adapter.inputs) == 1
+        assert adapter.inputs[0].messages[0] == SystemMessage(content="你是 Emma。")
+        assert "现在开始一段新对话" in adapter.inputs[0].messages[1].content[0].text
+        messages = (await session_service.open(session_id))["messages"]
+        assert messages[0]["message_json"]["source"] == "opening"
+        assert messages[0]["message_json"]["display_content"] == []
+        assert messages[1]["message_kind"] == "assistant_message"
+    finally:
+        await scheduler.close()
+        await models.aclose()
+
+
+@pytest.mark.asyncio
+async def test_disabling_interrupt_blocks_until_playback_ack_and_stop_releases(
+    session_service, tmp_path
+):
+    (tmp_path / "default.md").write_text("Be brief.", encoding="utf-8")
+    adapter = ScriptedAdapter([["One"], ["Two"]])
+    models, model = make_models(adapter)
+    session_id = int((await session_service.create("Practice"))["session_id"])
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    scheduler = Scheduler(
+        session_id,
+        session_service,
+        ContextManager(session_service, models, model, SystemPrompts(tmp_path)),
+        models,
+        model,
+        emit,
+    )
+    try:
+        await scheduler.set_interaction(False)
+        first = uuid4()
+        await scheduler.submit(Submit(first, "First", "default"))
+        await scheduler.wait_idle()
+        with pytest.raises(SessionError) as caught:
+            await scheduler.submit(Submit(uuid4(), "Do not save", "default"))
+        assert caught.value.code == "REPLY_BUSY"
+        assert len((await session_service.open(session_id))["messages"]) == 2
+        await scheduler.playback_finished(str(first))
+        await scheduler.submit(Submit(uuid4(), "Second", "default"))
+        await scheduler.stop()
+        assert events[-1]["type"] == "runtime_state"
+        assert events[-1]["busy"] is False
     finally:
         await scheduler.close()
         await models.aclose()

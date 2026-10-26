@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SessionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    scene_id: int | None = Field(default=None, gt=0)
     title: str = Field(min_length=1, max_length=200)
 
 
@@ -20,6 +21,9 @@ def session_view(row) -> dict:
     return {
         "session_id": str(row["session_id"]),
         "title": row["title"],
+        "scene_id": str(row["scene_id"]) if row["scene_id"] is not None else None,
+        "message_count": row.get("message_count", 0),
+        "latest_message": row.get("latest_message", ""),
         "status": row["status"],
         "model_selection": row["model_selection"],
         "created_at": row["created_at"].isoformat(),

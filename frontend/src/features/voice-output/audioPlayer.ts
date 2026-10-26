@@ -1,6 +1,10 @@
 /** 管理回复 PCM 的顺序播放和取消，不管理模型生成状态。 */
 export class AudioPlayer {
   private context?: AudioContext
+  private gain?: GainNode
+  private analyser?: AnalyserNode
+  private samples = new Float32Array(256)
+  private volume = 0.8
   private requestId?: string
   private sources = new Set<AudioBufferSourceNode>()
   private nextTime = 0
@@ -11,6 +15,27 @@ export class AudioPlayer {
   async unlock(): Promise<void> {
     this.context ??= new AudioContext()
     await this.context.resume()
+    if (!this.gain) {
+      this.gain = this.context.createGain()
+      this.gain.gain.value = this.volume
+      this.analyser = this.context.createAnalyser()
+      this.analyser.fftSize = 256
+      this.gain.connect(this.analyser)
+      this.analyser.connect(this.context.destination)
+    }
+  }
+  setVolume(value: number): void {
+    this.volume = Math.max(0, Math.min(1, value))
+    if (this.gain) this.gain.gain.value = this.volume
+  }
+  /** 读取当前实际输出的振幅，已接收但尚未播放的块不会让音波提前运动。 */
+  getAmplitude(): number {
+    if (!this.analyser || this.context?.state !== 'running') return 0
+    this.analyser.getFloatTimeDomainData(this.samples)
+    return Math.sqrt(
+      this.samples.reduce((sum, value) => sum + value * value, 0) /
+        this.samples.length,
+    )
   }
   begin(requestId: string): void {
     this.stop()
@@ -18,7 +43,7 @@ export class AudioPlayer {
   }
   append(requestId: string, pcm: ArrayBuffer, sampleRate: number): void {
     if (requestId !== this.requestId) return
-    if (!this.context || this.context.state !== 'running') {
+    if (!this.context || !this.gain || this.context.state !== 'running') {
       throw new Error('浏览器尚未允许播放，请点击发送或开始说话。')
     }
     if (pcm.byteLength % 2 !== 0 || sampleRate <= 0)
@@ -31,7 +56,7 @@ export class AudioPlayer {
       channel[i] = samples.getInt16(i * 2, true) / 32768
     const source = this.context.createBufferSource()
     source.buffer = buffer
-    source.connect(this.context.destination)
+    source.connect(this.gain)
     this.sources.add(source)
     source.onended = () => {
       this.sources.delete(source)

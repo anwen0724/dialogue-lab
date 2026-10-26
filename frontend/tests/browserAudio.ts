@@ -66,6 +66,15 @@ export function installBrowserAudio() {
       close = async () => {
         this.state = 'closed'
       }
+      createGain = () => ({ gain: { value: 1 }, connect() {}, disconnect() {} })
+      createAnalyser = () => ({
+        fftSize: 256,
+        connect() {},
+        disconnect() {},
+        getFloatTimeDomainData(data: Float32Array) {
+          data.fill(0)
+        },
+      })
       createMediaStreamSource = () => ({ connect() {}, disconnect() {} })
     },
   )

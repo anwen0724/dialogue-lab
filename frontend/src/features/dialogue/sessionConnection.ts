@@ -14,6 +14,9 @@ type Snapshot = {
   generating: boolean
   playing: boolean
   compacting: boolean
+  busy: boolean
+  allowInterrupt: boolean
+  recordingWanted: boolean
   partial: string
   recording: 'idle' | 'preparing' | 'recording' | 'finishing'
 }
@@ -28,6 +31,9 @@ export class SessionConnection {
     generating: false,
     playing: false,
     compacting: false,
+    busy: false,
+    allowInterrupt: true,
+    recordingWanted: false,
     partial: '',
     recording: 'idle',
   }
@@ -46,6 +52,7 @@ export class SessionConnection {
   private microphone?: Microphone
   private recordingAbort?: AbortController
   private recordingRequested = false
+  private recordingPreset = 'general'
   constructor(private sessionId: string) {}
   getSnapshot = () => this.snapshot
   subscribe = (listener: () => void) => {
@@ -127,7 +134,22 @@ export class SessionConnection {
     this.rejectPending(new Error('会话已关闭。'))
   }
 
+  setInteraction(allowInterrupt: boolean): void {
+    this.send({ type: 'set_interaction', allow_interrupt: allowInterrupt })
+  }
+  setVolume(volume: number): void {
+    this.player.setVolume(volume)
+  }
+  getAmplitude = (): number =>
+    Math.max(this.player.getAmplitude(), this.microphone?.getAmplitude() ?? 0)
+  async startSession(): Promise<void> {
+    await this.unlockPlayback()
+    if (this.snapshot.canControl)
+      this.send({ type: 'start_session', request_id: crypto.randomUUID() })
+  }
   async submit(text: string, preset: string): Promise<void> {
+    if (this.snapshot.busy && !this.snapshot.allowInterrupt)
+      throw new Error('请等待本轮回复结束。')
     this.update({ error: undefined })
     await this.unlockPlayback()
     const requestId = crypto.randomUUID()
@@ -154,6 +176,9 @@ export class SessionConnection {
   }
 
   async startRecording(preset: string): Promise<void> {
+    this.recordingPreset = preset
+    this.update({ recordingWanted: true })
+    if (this.snapshot.busy && !this.snapshot.allowInterrupt) return
     if (this.snapshot.recording !== 'idle') return
     const controller = new AbortController()
     this.recordingAbort = controller
@@ -162,6 +187,7 @@ export class SessionConnection {
       const [microphone] = await Promise.all([
         Microphone.open(
           (audio) => {
+            if (this.snapshot.busy && !this.snapshot.allowInterrupt) return
             if (
               this.socket?.readyState !== WebSocket.OPEN ||
               this.socket.bufferedAmount > 1_000_000
@@ -197,6 +223,7 @@ export class SessionConnection {
   }
 
   async stopRecording(): Promise<void> {
+    this.update({ recordingWanted: false })
     if (this.snapshot.recording === 'preparing') {
       this.recordingAbort?.abort()
       this.microphone?.dispose()
@@ -221,6 +248,7 @@ export class SessionConnection {
   }
 
   private recordingFailure(error: unknown): void {
+    this.update({ recordingWanted: false })
     this.recordingAbort?.abort()
     this.microphone?.dispose()
     if (this.recordingRequested && this.socket?.readyState === WebSocket.OPEN) {
@@ -267,6 +295,17 @@ export class SessionConnection {
 
   private receive(event: ReturnType<typeof parseEvent>): void {
     switch (event.type) {
+      case 'runtime_state':
+        this.update({ busy: event.busy, allowInterrupt: event.allowInterrupt })
+        if (event.busy && !event.allowInterrupt) {
+          this.recordingAbort?.abort()
+          this.microphone?.dispose()
+          this.update({
+            partial: '',
+            recording: this.recordingRequested ? 'finishing' : 'idle',
+          })
+        } else this.resumeRecording()
+        break
       case 'connected':
         this.update({
           status: 'connected',
@@ -356,7 +395,12 @@ export class SessionConnection {
         this.recordingAbort?.abort()
         this.microphone?.dispose()
         this.recordingRequested = false
-        this.update({ recording: 'idle', partial: '' })
+        this.update({
+          recording: 'idle',
+          partial: '',
+          recordingWanted: event.paused && this.snapshot.recordingWanted,
+        })
+        this.resumeRecording()
         break
       case 'compaction_started':
         this.update({ compacting: true })
@@ -366,6 +410,12 @@ export class SessionConnection {
         break
       case 'error':
         this.update({ error: event.message })
+        // 合成失败不终止文字生成，等待模型自己的结束事件。
+        if (
+          event.requestId === this.activeRequest &&
+          event.code !== 'TTS_FAILED'
+        )
+          this.update({ generating: false })
         if (event.requestId) {
           this.pending.get(event.requestId)?.reject(new Error(event.message))
           this.pending.delete(event.requestId)
@@ -386,11 +436,24 @@ export class SessionConnection {
     this.update({ playing: true })
   }
 
+  private resumeRecording(): void {
+    if (
+      this.snapshot.recordingWanted &&
+      this.snapshot.recording === 'idle' &&
+      this.snapshot.canControl &&
+      !(this.snapshot.busy && !this.snapshot.allowInterrupt)
+    ) {
+      void this.startRecording(this.recordingPreset).catch((error: unknown) =>
+        this.recordingFailure(error),
+      )
+    }
+  }
+
   private releaseDevices(): void {
     this.recordingAbort?.abort()
     this.microphone?.dispose()
     this.recordingRequested = false
-    this.update({ recording: 'idle' })
+    this.update({ recording: 'idle', recordingWanted: false, busy: false })
     void this.player.dispose().catch(() => console.warn('播放设备释放失败。'))
   }
   private rejectPending(error: Error): void {
