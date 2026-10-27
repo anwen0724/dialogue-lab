@@ -43,7 +43,7 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 
 ## 快速开始
 
-以下命令使用 PowerShell。前后端分别在两个终端运行，数据库由 Docker Compose 管理。
+以下命令使用 PowerShell。开发入口在一个终端中启动前后端，数据库由 Docker Compose 管理。
 
 ### 1. 准备环境
 
@@ -57,11 +57,12 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 uv sync --locked
 ```
 
-在另一个终端，从项目根目录进入前端目录并安装依赖：
+安装前端依赖，然后返回项目根目录：
 
 ```powershell
 cd frontend
 npm ci
+cd ..
 ```
 
 ### 3. 填写配置
@@ -96,31 +97,55 @@ uv run alembic upgrade head
 
 ### 5. 启动应用
 
-**后端终端：在项目根目录执行。**
+启动 Docker Desktop 后，在项目根目录执行：
 
 ```powershell
-uv run uvicorn dialogue_lab.main:app --reload --host 127.0.0.1 --port 8000
+uv run dialogue-lab dev
 ```
 
-**前端终端：在第 2 步的 `frontend` 目录执行。**
-
-```powershell
-npm run dev
-```
+命令启动或复用现有数据库，只读检查数据库版本，然后启动 Uvicorn 和 Vite。前后端保留热更新，并在当前终端直接显示日志。端口被占用时停止启动，不关闭其他程序。
 
 打开 <http://127.0.0.1:5173>。后端接口文档位于 <http://127.0.0.1:8000/docs>。
 
 ### 日常启动与停止
 
-完成首次准备后，日常只需启动 Docker Desktop，在项目根目录执行 `docker compose up -d --wait postgres`，然后分别执行上面的前后端启动命令。
+完成首次准备后，日常启动 Docker Desktop，再执行 `uv run dialogue-lab dev` 即可。
 
-停止前后端时，在各自终端按 `Ctrl+C`。停止数据库时，在项目根目录执行：
+在当前终端按 `Ctrl+C` 停止前后端，数据库保持运行。需要停止数据库时，在项目根目录执行：
 
 ```powershell
 docker compose stop
 ```
 
 普通停止不会删除会话数据。`docker compose down -v` 会删除数据卷，不用于日常停止。
+
+### 更新数据库结构
+
+首次初始化或更新代码后，如果启动器提示数据库版本不一致，在项目根目录手动执行：
+
+```powershell
+uv run alembic upgrade head
+uv run dialogue-lab dev
+```
+
+启动器不会自动迁移。版本检查发生在数据库启动之后，因此收到版本提示时数据库已经运行。迁移只应用尚未执行的版本；没有新迁移时不重复修改。可用 `uv run alembic current` 查看当前数据库版本。
+
+### 单独启动服务
+
+排查问题时，可以保留原来的启动方式。数据库就绪后，在根目录启动后端：
+
+```powershell
+uv run uvicorn dialogue_lab.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+在另一个终端启动前端：
+
+```powershell
+cd frontend
+npm run dev
+```
+
+单独启动时，各终端分别按 `Ctrl+C` 停止服务。
 
 ## 使用方式
 
