@@ -1,4 +1,4 @@
-"""场景与会话持久结构；消息内容和路径分开保存，身份正文保存在文档中。"""
+"""角色与会话持久结构；消息内容和路径分开保存，身份正文保存在文档中。"""
 
 from sqlalchemy import (
     BigInteger,
@@ -32,10 +32,10 @@ def timestamp(name, *, nullable=False, default=False):
     )
 
 
-scenes = Table(
-    "scenes",
+characters = Table(
+    "characters",
     metadata,
-    identity("scene_id"),
+    identity("character_id"),
     Column("name", Text, nullable=False),
     Column("category", Text, nullable=False),
     Column("character_name", Text, nullable=False),
@@ -46,7 +46,7 @@ scenes = Table(
     Column("status", Text, nullable=False, server_default="active"),
     timestamp("created_at", default=True),
     timestamp("updated_at", default=True),
-    CheckConstraint("status IN ('active', 'archived')", name="scene_status"),
+    CheckConstraint("status IN ('active', 'archived')", name="character_status"),
 )
 
 
@@ -54,8 +54,8 @@ sessions = Table(
     "sessions",
     metadata,
     identity("session_id"),
-    Column("scene_id", BigInteger),
-    ForeignKeyConstraint(["scene_id"], ["scenes.scene_id"], name="session_scene"),
+    Column("character_id", BigInteger),
+    ForeignKeyConstraint(["character_id"], ["characters.character_id"], name="session_character"),
     Column("title", Text, nullable=False),
     Column("status", Text, nullable=False, server_default="active"),
     Column("active_entry_id", BigInteger),
@@ -70,7 +70,7 @@ sessions = Table(
     ),
 )
 
-Index("session_scene_updated", sessions.c.scene_id, sessions.c.updated_at)
+Index("session_character_updated", sessions.c.character_id, sessions.c.updated_at)
 
 messages = Table(
     "session_messages",

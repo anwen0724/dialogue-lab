@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
 import { getSettings, getVoices } from '../settings/api'
 import type { ModelSelection, VoiceOption } from '../settings/api'
-import { saveSceneVoice } from './api'
-import type { Scene } from './api'
+import { saveCharacterVoice } from './api'
+import type { Character } from './api'
 
-/** 场景仅选择音色，合成模型来自应用设置。 */
+/** 角色仅选择音色，合成模型来自应用设置。 */
 export function VoiceSettings({
-  scene,
+  character,
   onSaved,
 }: {
-  scene: Scene
-  onSaved: (scene: Scene) => void
+  character: Character
+  onSaved: (character: Character) => void
 }) {
   const [model, setModel] = useState<ModelSelection | null>(null)
   const [voices, setVoices] = useState<VoiceOption[]>([])
-  const [selected, setSelected] = useState(scene.ttsVoice ?? '')
+  const [selected, setSelected] = useState(character.ttsVoice ?? '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -36,16 +36,16 @@ export function VoiceSettings({
     setBusy(true)
     setError('')
     try {
-      onSaved(await saveSceneVoice(scene.id, selected))
+      onSaved(await saveCharacterVoice(character.id, selected))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '保存声音失败。')
     } finally {
       setBusy(false)
     }
   }
-  const compatible = voices.some((voice) => voice.id === scene.ttsVoice)
+  const compatible = voices.some((voice) => voice.id === character.ttsVoice)
   return (
-    <section className="setting-section scene-form">
+    <section className="setting-section character-form">
       <h3>人物声音</h3>
       {model && (
         <p className="model-name">
@@ -82,7 +82,7 @@ export function VoiceSettings({
         disabled={
           busy ||
           !voices.some((voice) => voice.id === selected) ||
-          selected === scene.ttsVoice
+          selected === character.ttsVoice
         }
         onClick={() => void save()}
       >

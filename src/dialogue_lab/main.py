@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from dialogue_lab.api.characters import router as character_router
 from dialogue_lab.api.health import router as health_router
-from dialogue_lab.api.scenes import router as scene_router
 from dialogue_lab.api.session_websocket import router as websocket_router
 from dialogue_lab.api.sessions import router as session_router
 from dialogue_lab.api.settings import router as settings_router
@@ -31,7 +31,7 @@ def create_app() -> FastAPI:
 
     application = FastAPI(title=settings.app_name, lifespan=lifespan)
     application.state.settings = settings
-    application.include_router(scene_router, prefix="/api")
+    application.include_router(character_router, prefix="/api")
     application.include_router(settings_router, prefix="/api")
     application.include_router(health_router, prefix="/api")
     application.include_router(session_router, prefix="/api")

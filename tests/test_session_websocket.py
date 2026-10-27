@@ -62,11 +62,11 @@ def test_existing_connection_uses_saved_model_and_voice_on_next_reply(monkeypatc
                 return SimpleNamespace(status="ok")
 
         monkeypatch.setattr(speechio, "Synthesizer", Synthesizer)
-        scene_id = client.get("/api/scenes").json()[0]["scene_id"]
-        client.patch(f"/api/scenes/{scene_id}", json={"tts_voice": "longanhuan_v3.1"})
-        sid = client.post("/api/sessions", json={"title": "Switch", "scene_id": scene_id}).json()[
-            "session_id"
-        ]
+        character_id = client.get("/api/characters").json()[0]["character_id"]
+        client.patch(f"/api/characters/{character_id}", json={"tts_voice": "longanhuan_v3.1"})
+        sid = client.post(
+            "/api/sessions", json={"title": "Switch", "character_id": character_id}
+        ).json()["session_id"]
         with client.websocket_connect(f"/api/sessions/{sid}/realtime") as socket:
             socket.receive_json()
             for index in range(2):
@@ -82,7 +82,7 @@ def test_existing_connection_uses_saved_model_and_voice_on_next_reply(monkeypatc
                         assert client.patch("/api/settings", json=settings).status_code == 200
                         assert (
                             client.patch(
-                                f"/api/scenes/{scene_id}", json={"tts_voice": "Emily_v3.1"}
+                                f"/api/characters/{character_id}", json={"tts_voice": "Emily_v3.1"}
                             ).status_code
                             == 200
                         )
@@ -210,7 +210,7 @@ def test_recording_tail_is_submitted_once_before_recording_stops(monkeypatch):
     assert credentials_match == [True]
 
 
-def test_scene_identity_update_applies_to_next_turn_and_title_uses_real_input(
+def test_character_identity_update_applies_to_next_turn_and_title_uses_real_input(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("DIALOGUE_LAB_DATABASE_URL", TEST_DATABASE_URL)
@@ -220,8 +220,8 @@ def test_scene_identity_update_applies_to_next_turn_and_title_uses_real_input(
         adapter = install_provider(
             application, monkeypatch, [["Hi, I'm Emma."], ["Nice to meet you."]]
         )
-        scene = client.post(
-            "/api/scenes",
+        character = client.post(
+            "/api/characters",
             json={
                 "name": "Cafe",
                 "category": "English",
@@ -231,7 +231,7 @@ def test_scene_identity_update_applies_to_next_turn_and_title_uses_real_input(
             },
         ).json()
         sid = client.post(
-            "/api/sessions", json={"title": "新会话", "scene_id": scene["scene_id"]}
+            "/api/sessions", json={"title": "新会话", "character_id": character["character_id"]}
         ).json()["session_id"]
         with client.websocket_connect(f"/api/sessions/{sid}/realtime") as socket:
             socket.receive_json()
@@ -240,14 +240,16 @@ def test_scene_identity_update_applies_to_next_turn_and_title_uses_real_input(
                 pass
             assert adapter.inputs[0].messages[0].content == "You are Emma, a coffee lover."
             client.patch(
-                f"/api/scenes/{scene['scene_id']}",
+                f"/api/characters/{character['character_id']}",
                 json={"system_prompt": "You are Emma, a tea lover."},
             )
             socket.send_json({"type": "submit", "request_id": str(uuid4()), "text": "I like tea."})
             while socket.receive_json()["type"] != "generation_finished":
                 pass
             assert adapter.inputs[1].messages[0].content == "You are Emma, a tea lover."
-        listed = client.get("/api/sessions", params={"scene_id": scene["scene_id"]}).json()[0]
+        listed = client.get(
+            "/api/sessions", params={"character_id": character["character_id"]}
+        ).json()[0]
         assert listed["title"] == "I like tea."
         assert listed["message_count"] == 3
         assert listed["latest_message"] == "Nice to meet you."
@@ -260,8 +262,8 @@ def test_character_rename_updates_model_prompt_without_rewriting_document(monkey
     template = "You are {{character_name}}, an English partner."
     with TestClient(application) as client:
         adapter = install_provider(application, monkeypatch, [["Hello"], ["Hi again"]])
-        scene = client.post(
-            "/api/scenes",
+        character = client.post(
+            "/api/characters",
             json={
                 "name": "Cafe",
                 "category": "English",
@@ -270,9 +272,9 @@ def test_character_rename_updates_model_prompt_without_rewriting_document(monkey
                 "system_prompt": template,
             },
         ).json()
-        scene_url = f"/api/scenes/{scene['scene_id']}"
+        character_url = f"/api/characters/{character['character_id']}"
         sid = client.post(
-            "/api/sessions", json={"title": "新会话", "scene_id": scene["scene_id"]}
+            "/api/sessions", json={"title": "新会话", "character_id": character["character_id"]}
         ).json()["session_id"]
         with client.websocket_connect(f"/api/sessions/{sid}/realtime") as socket:
             socket.receive_json()
@@ -280,11 +282,11 @@ def test_character_rename_updates_model_prompt_without_rewriting_document(monkey
             while socket.receive_json()["type"] != "generation_finished":
                 pass
             assert adapter.inputs[0].messages[0].content == "You are Emma, an English partner."
-            changed = client.patch(scene_url, json={"character_name": "Alice"}).json()
+            changed = client.patch(character_url, json={"character_name": "Alice"}).json()
             assert changed["character_name"] == "Alice"
             assert changed["system_prompt"] == template
             socket.send_json({"type": "submit", "request_id": str(uuid4()), "text": "Hello"})
             while socket.receive_json()["type"] != "generation_finished":
                 pass
             assert adapter.inputs[1].messages[0].content == "You are Alice, an English partner."
-        assert client.get(scene_url).json()["system_prompt"] == template
+        assert client.get(character_url).json()["system_prompt"] == template

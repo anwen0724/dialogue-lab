@@ -14,27 +14,27 @@ export type ModelOption = ModelSelection & {
   kind?: 'stt' | 'tts'
 }
 export type VoiceOption = { id: string; name: string }
-export type AffectedScene = { id: string; name: string }
+export type AffectedCharacter = { id: string; name: string }
 
 export async function previewSettings(
   settings: ApplicationSettings,
   signal: AbortSignal,
-): Promise<AffectedScene[]> {
+): Promise<AffectedCharacter[]> {
   const result = await requestJson('/settings/preview', {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
   })
-  if (!Array.isArray(result)) throw new Error('无法检查场景音色。')
+  if (!Array.isArray(result)) throw new Error('无法检查角色音色。')
   return result.map((value: unknown) => {
     if (
       !isRecord(value) ||
-      typeof value.scene_id !== 'string' ||
+      typeof value.character_id !== 'string' ||
       typeof value.name !== 'string'
     )
-      throw new Error('场景音色检查结果无效。')
-    return { id: value.scene_id, name: value.name }
+      throw new Error('角色音色检查结果无效。')
+    return { id: value.character_id, name: value.name }
   })
 }
 

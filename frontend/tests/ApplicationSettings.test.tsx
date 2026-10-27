@@ -107,7 +107,7 @@ test('首页切换对话模型后明确回到模型默认，保存实际选择',
   )
 })
 
-test('更换合成模型时在保存前列出需要重选声音的场景', async () => {
+test('更换合成模型时在保存前列出需要重选声音的角色', async () => {
   const settings = {
     dialogue: { provider_id: 'deepseek', model_id: 'flash', reasoning: null },
     stt: { provider_id: 'bailian', model_id: 'asr' },
@@ -156,7 +156,9 @@ test('更换合成模型时在保存前列出需要重选声音的场景', async
         url.endsWith('/settings/preview') &&
         String(options?.body).includes('tts-b')
       )
-        result = [{ scene_id: '8', name: '窗边咖啡馆', tts_voice: 'old-voice' }]
+        result = [
+          { character_id: '8', name: '窗边咖啡馆', tts_voice: 'old-voice' },
+        ]
       return new Response(JSON.stringify(result))
     }),
   )

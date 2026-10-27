@@ -48,8 +48,8 @@ async def test_legacy_incompatible_voice_is_preserved_and_text_still_replies(dat
     application = create_app()
     with TestClient(application) as client:
         install_provider(application, monkeypatch)
-        scene = client.post(
-            "/api/scenes",
+        character = client.post(
+            "/api/characters",
             json={
                 "name": "Legacy voice",
                 "category": "Test",
@@ -61,16 +61,16 @@ async def test_legacy_incompatible_voice_is_preserved_and_text_still_replies(dat
         # 模拟升级前遗留的音色；正常编辑接口不会接受当前模型不支持的值。
         async with database.engine.begin() as connection:
             await connection.execute(
-                text("UPDATE scenes SET tts_voice='retired-voice' WHERE scene_id=:id"),
-                {"id": int(scene["scene_id"])},
+                text("UPDATE characters SET tts_voice='retired-voice' WHERE character_id=:id"),
+                {"id": int(character["character_id"])},
             )
-        current = client.get(f"/api/scenes/{scene['scene_id']}").json()
+        current = client.get(f"/api/characters/{character['character_id']}").json()
         assert current["tts_voice"] == "retired-voice"
         assert current["voice_available"] is False
         preview = client.post(
             "/api/settings/preview", json=client.get("/api/settings").json()
         ).json()
-        assert any(row["scene_id"] == scene["scene_id"] for row in preview)
+        assert any(row["character_id"] == character["character_id"] for row in preview)
         speech_calls = []
 
         def unexpected_synthesis(config):
@@ -79,7 +79,7 @@ async def test_legacy_incompatible_voice_is_preserved_and_text_still_replies(dat
 
         monkeypatch.setattr(speechio, "Synthesizer", unexpected_synthesis)
         sid = client.post(
-            "/api/sessions", json={"title": "Test", "scene_id": scene["scene_id"]}
+            "/api/sessions", json={"title": "Test", "character_id": character["character_id"]}
         ).json()["session_id"]
         with client.websocket_connect(f"/api/sessions/{sid}/realtime") as socket:
             socket.receive_json()

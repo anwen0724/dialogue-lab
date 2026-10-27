@@ -89,7 +89,7 @@ class SessionConnection:
 
     def __init__(self, socket, session_id):
         self.socket, self.session_id = socket, session_id
-        self.scene_id = None
+        self.character_id = None
         self.services = socket.app.state.services
         self.scheduler = None
         self.outgoing = asyncio.Queue()
@@ -115,7 +115,9 @@ class SessionConnection:
             self.scheduler = await self.services.claim(self.session_id, self.emit)
             # 取得控制权后重读，补齐 HTTP 查询与建立连接之间保存的消息。
             current = await self.services.sessions.open(self.session_id)
-            self.scene_id = int(current["scene_id"]) if current["scene_id"] is not None else None
+            self.character_id = (
+                int(current["character_id"]) if current["character_id"] is not None else None
+            )
             await self.emit(
                 {
                     "type": "connected",
@@ -223,9 +225,9 @@ class SessionConnection:
                 await asyncio.gather(writer, return_exceptions=True)
 
     async def resolve_preset(self, fallback):
-        if self.scene_id is None:
+        if self.character_id is None:
             return fallback
-        return await self.services.scenes.prompt_key(self.scene_id)
+        return await self.services.characters.prompt_key(self.character_id)
 
     async def record(self, preset):
         """final 由服务端直接提交；临时结果仅用于展示，结束录音保留尾句。"""

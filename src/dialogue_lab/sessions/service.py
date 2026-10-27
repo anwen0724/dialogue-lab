@@ -10,11 +10,11 @@ class SessionService:
     def __init__(self, store: SessionStore):
         self.store = store
 
-    async def create(self, title: str, scene_id: int | None = None) -> dict:
-        return session_view(await self.store.create(title, scene_id))
+    async def create(self, title: str, character_id: int | None = None) -> dict:
+        return session_view(await self.store.create(title, character_id))
 
-    async def list(self, scene_id=None) -> list[dict]:
-        return [session_view(row) for row in await self.store.list(scene_id)]
+    async def list(self, character_id=None) -> list[dict]:
+        return [session_view(row) for row in await self.store.list(character_id)]
 
     async def path(self, session_id: int):
         await self.store.get(session_id)

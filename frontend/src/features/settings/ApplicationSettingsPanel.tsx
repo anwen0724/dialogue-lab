@@ -5,7 +5,7 @@ import type {
   ApplicationSettings,
   ModelOption,
   ModelSelection,
-  AffectedScene,
+  AffectedCharacter,
 } from './api'
 
 /** 首页的全局模型选择；编辑草稿不会改变正在使用的设置。 */
@@ -18,7 +18,7 @@ export function ApplicationSettingsPanel({ onClose }: { onClose: () => void }) {
   const [saved, setSaved] = useState(false)
   const [preview, setPreview] = useState<{
     settings: ApplicationSettings
-    affected: AffectedScene[]
+    affected: AffectedCharacter[]
   } | null>(null)
   useEffect(() => {
     if (!draft) return
@@ -89,7 +89,10 @@ export function ApplicationSettingsPanel({ onClose }: { onClose: () => void }) {
         if (!busy) onClose()
       }}
     >
-      <form className="panel-content scene-form model-settings" onSubmit={save}>
+      <form
+        className="panel-content character-form model-settings"
+        onSubmit={save}
+      >
         {!draft && !error && <p role="status">正在读取设置…</p>}
         {draft && (
           <>
@@ -149,11 +152,11 @@ export function ApplicationSettingsPanel({ onClose }: { onClose: () => void }) {
               {preview?.settings === draft && preview.affected.length > 0 && (
                 <div role="status">
                   <p>
-                    以下场景需要重新选择音色。保存后保留原音色，暂停语音播放，文字交流仍可继续。
+                    以下角色需要重新选择音色。保存后保留原音色，暂停语音播放，文字交流仍可继续。
                   </p>
                   <ul>
-                    {preview.affected.map((scene) => (
-                      <li key={scene.id}>{scene.name}</li>
+                    {preview.affected.map((character) => (
+                      <li key={character.id}>{character.name}</li>
                     ))}
                   </ul>
                 </div>

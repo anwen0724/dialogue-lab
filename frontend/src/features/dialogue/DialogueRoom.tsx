@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import type { Scene } from '../scenes/api'
+import type { Character } from '../characters/api'
 import { listSessions } from '../sessions/api'
 import type { Session } from '../sessions/api'
 import { SidePanel } from '../../shared/ui/SidePanel'
@@ -10,34 +10,34 @@ import { MessageComposer } from './MessageComposer'
 import { VoiceWave } from './VoiceWave'
 import { DialogueSubtitles } from './DialogueSubtitles'
 import { RoomSettings } from './RoomSettings'
-import { SceneEditor } from '../scenes/SceneEditor'
+import { CharacterEditor } from '../characters/CharacterEditor'
 import { loadPreferences, savePreferences } from './preferences'
 
 /** 沉浸页拥有画面布局和面板；一份连接状态驱动字幕、消息与输入。 */
-export function SceneRoom({
+export function DialogueRoom({
   sessionId,
-  scene,
+  character,
   onBack,
   onSelect,
   onNew,
-  onSceneDeleted,
-  onSceneChanged,
+  onCharacterDeleted,
+  onCharacterChanged,
   initialDraft,
   onDraftChange,
 }: {
   sessionId: string
-  scene: Scene | null
+  character: Character | null
   onBack: () => void
   onSelect: (id: string) => void
   onNew: () => void
-  onSceneDeleted: (id: string) => void
-  onSceneChanged: (scene: Scene) => void
+  onCharacterDeleted: (id: string) => void
+  onCharacterChanged: (character: Character) => void
   initialDraft: string
   onDraftChange: (text: string) => void
 }) {
   const { state, connection } = useDialogue(sessionId)
   const [panel, setPanel] = useState<
-    'sessions' | 'messages' | 'settings' | 'scene' | null
+    'sessions' | 'messages' | 'settings' | 'character' | null
   >(null)
   const [controls, setControls] = useState(false)
   const [text, setText] = useState(initialDraft)
@@ -57,13 +57,13 @@ export function SceneRoom({
     if (state.canControl) connection.setInteraction(allowInterrupt)
   }, [connection, state.canControl, allowInterrupt])
   useEffect(() => {
-    if (!state.canControl || !scene || openingStarted.current) return
+    if (!state.canControl || !character || openingStarted.current) return
     openingStarted.current = true
     if (state.messages.length === 0)
       void connection
         .startSession()
         .catch((err: unknown) => setError(String(err)))
-  }, [connection, state.canControl, state.messages.length, scene])
+  }, [connection, state.canControl, state.messages.length, character])
   const [preset, setPreset] = useState('general')
   const scroll = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
@@ -73,22 +73,22 @@ export function SceneRoom({
   const latest = messages.at(-1)
   const latestText = state.draft?.text || state.partial || latest?.text || ''
   const latestAuthor = state.draft?.text
-    ? (scene?.characterName ?? 'AI')
+    ? (character?.characterName ?? 'AI')
     : state.partial
       ? '你'
       : latest?.role === 'user'
         ? '你'
-        : (scene?.characterName ?? 'AI')
+        : (character?.characterName ?? 'AI')
   useEffect(() => {
     if (panel !== 'sessions') return
     const controller = new AbortController()
-    listSessions(controller.signal, scene?.id)
+    listSessions(controller.signal, character?.id)
       .then(setSessions)
       .catch((err: unknown) => {
         if (!controller.signal.aborted) setError(String(err))
       })
     return () => controller.abort()
-  }, [panel, scene?.id, state.messages.length])
+  }, [panel, character?.id, state.messages.length])
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
   }, [panel, state.messages, state.draft])
@@ -135,10 +135,10 @@ export function SceneRoom({
           setControls(false)
       }}
     >
-      {scene?.background && (
+      {character?.background && (
         <img
           className="room-background"
-          src={scene.background}
+          src={character.background}
           alt="当前对话背景"
         />
       )}
@@ -147,14 +147,14 @@ export function SceneRoom({
         <div className="room-title-group">
           <button
             className="round-button"
-            aria-label="返回场景选择"
+            aria-label="返回角色选择"
             onClick={onBack}
           >
             <Icon name="back" />
           </button>
           <div>
             <span className="room-eyebrow">YOUR LITTLE SPACE</span>
-            <h1>{scene?.name ?? '会话'}</h1>
+            <h1>{character?.name ?? '会话'}</h1>
           </div>
         </div>
         <div className="room-actions">
@@ -183,10 +183,10 @@ export function SceneRoom({
           </button>
         </div>
       </header>
-      {scene && (
+      {character && (
         <div className="partner-label">
           <span className="partner-dot" />
-          <strong>{scene.characterName}</strong>
+          <strong>{character.characterName}</strong>
         </div>
       )}
       <section className="subtitle-area" aria-live="polite" aria-atomic="true">
@@ -197,13 +197,13 @@ export function SceneRoom({
             partial={state.partial}
             fallbackText={latestText}
             author={
-              state.speech ? (scene?.characterName ?? 'AI') : latestAuthor
+              state.speech ? (character?.characterName ?? 'AI') : latestAuthor
             }
             readPosition={connection.getPlaybackPosition}
           />
         )}
       </section>
-      {scene && !scene.voiceAvailable && (
+      {character && !character.voiceAvailable && (
         <div className="voice-notice" role="status">
           当前音色不可用，语音播放已暂停。
           <button
@@ -289,10 +289,10 @@ export function SceneRoom({
         <SidePanel title="这里的每次对话" onClose={() => setPanel(null)}>
           <div className="panel-content">
             <div className="history-intro">
-              <span>{scene?.name ?? '全部会话'}</span>
+              <span>{character?.name ?? '全部会话'}</span>
               <small>{sessions.length} 个会话</small>
             </div>
-            {scene?.status === 'active' && (
+            {character?.status === 'active' && (
               <button className="new-session-button" onClick={onNew}>
                 <Icon name="plus" />
                 新建会话
@@ -335,7 +335,7 @@ export function SceneRoom({
                   <small>
                     {message.role === 'user'
                       ? '你'
-                      : (scene?.characterName ?? 'AI')}
+                      : (character?.characterName ?? 'AI')}
                   </small>
                   <p>{message.text}</p>
                   {message.status !== 'completed' && (
@@ -347,7 +347,7 @@ export function SceneRoom({
               ))}
               {state.draft && (
                 <article className="chat-message assistant">
-                  <small>{scene?.characterName ?? 'AI'}</small>
+                  <small>{character?.characterName ?? 'AI'}</small>
                   <p>{state.draft.text || '…'}</p>
                 </article>
               )}
@@ -367,13 +367,13 @@ export function SceneRoom({
       {panel === 'settings' && (
         <SidePanel title="你的对话空间" onClose={() => setPanel(null)}>
           <RoomSettings
-            scene={scene}
+            character={character}
             preferences={preferences}
             onPreferencesChange={setPreferences}
-            onSceneChanged={onSceneChanged}
-            onEdit={() => setPanel('scene')}
+            onCharacterChanged={onCharacterChanged}
+            onEdit={() => setPanel('character')}
           >
-            {!scene && (
+            {!character && (
               <label>
                 系统指令
                 <select
@@ -390,17 +390,17 @@ export function SceneRoom({
           </RoomSettings>
         </SidePanel>
       )}
-      {panel === 'scene' && scene && (
-        <SceneEditor
-          scene={scene}
+      {panel === 'character' && character && (
+        <CharacterEditor
+          character={character}
           backLabel="返回设置"
           onBack={() => setPanel('settings')}
           onClose={() => setPanel(null)}
           onSaved={(updated) => {
-            onSceneChanged(updated)
+            onCharacterChanged(updated)
             setPanel('settings')
           }}
-          onDeleted={onSceneDeleted}
+          onDeleted={onCharacterDeleted}
         />
       )}
     </main>

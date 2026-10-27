@@ -73,7 +73,7 @@ async def database(isolated_schema):
             await database.close()
             raise RuntimeError("测试连接没有进入隔离 schema，拒绝运行和清理数据。")
     yield database
-    # 保留迁移及初始化场景，清理每项测试创建的会话。
+    # 保留迁移及初始化角色，清理每项测试创建的会话。
     async with database.engine.begin() as connection:
         await connection.execute(
             text(

@@ -25,13 +25,18 @@ def test_upgrade_backfills_existing_scenes_without_a_default(isolated_schema, mo
     monkeypatch.setenv("DIALOGUE_LAB_TTS_VOICE", "longanhuan_v3.1")
     command.upgrade(Config("alembic.ini"), "head")
     after = asyncio.run(
-        sql("SELECT scene_id,name,prompt_key,tts_voice FROM scenes ORDER BY scene_id")
+        sql(
+            "SELECT character_id AS scene_id,name,prompt_key,tts_voice "
+            "FROM characters ORDER BY character_id"
+        )
     )
     assert [{k: row[k] for k in ("scene_id", "name", "prompt_key")} for row in after] == before
     assert all(row["tts_voice"] == "longanhuan_v3.1" for row in after)
     inserted = asyncio.run(
-        sql("""INSERT INTO scenes(name,category,character_name,prompt_key)
+        sql("""INSERT INTO characters(name,category,character_name,prompt_key)
         VALUES ('Migration test','test','test','migration-test') RETURNING tts_voice""")
     )
     assert inserted[0]["tts_voice"] is None
-    asyncio.run(sql("DELETE FROM scenes WHERE prompt_key='migration-test' RETURNING scene_id"))
+    asyncio.run(
+        sql("DELETE FROM characters WHERE prompt_key='migration-test' RETURNING character_id")
+    )

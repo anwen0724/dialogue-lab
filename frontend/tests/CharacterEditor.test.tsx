@@ -2,14 +2,14 @@
 import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, test } from 'vitest'
-import { SceneEditor } from '../src/features/scenes/SceneEditor'
+import { CharacterEditor } from '../src/features/characters/CharacterEditor'
 
 afterEach(cleanup)
 
 function Editor() {
   const [open, setOpen] = useState(true)
   return open ? (
-    <SceneEditor
+    <CharacterEditor
       onClose={() => setOpen(false)}
       onSaved={() => {}}
       onDeleted={() => {}}
@@ -41,10 +41,10 @@ test('取消文件选择保留侧栏和未保存内容，面板自身仍可取�
       new Event('cancel', { bubbles: true }),
     )
     expect(screen.getByDisplayValue('Alice')).toBeDefined()
-    expect(screen.getByRole('dialog', { name: '新建场景' })).toBeDefined()
+    expect(screen.getByRole('dialog', { name: '新建角色' })).toBeDefined()
   }
   fireEvent(
-    screen.getByRole('dialog', { name: '新建场景' }),
+    screen.getByRole('dialog', { name: '新建角色' }),
     new Event('cancel', { cancelable: true }),
   )
   expect(screen.queryByRole('dialog')).toBeNull()

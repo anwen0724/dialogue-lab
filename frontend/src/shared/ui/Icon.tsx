@@ -13,6 +13,8 @@ export function Icon({
     | 'history'
     | 'edit'
     | 'plus'
+    | 'more'
+    | 'copy'
 }) {
   const paths = {
     arrow: 'M5 12h14m-6-6 6 6-6 6',
@@ -26,6 +28,8 @@ export function Icon({
     history: 'M4 5h16v13H9l-5 3V5ZM8 9h8M8 13h5',
     edit: 'm4 16 12-12 4 4L8 20H4v-4ZM14 6l4 4',
     plus: 'M12 5v14M5 12h14',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
+    copy: 'M8 8h12v12H8ZM15 8V4H4v11h4',
   }
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

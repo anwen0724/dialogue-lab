@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { listScenes, getScene } from '../features/scenes/api'
-import type { Scene } from '../features/scenes/api'
-import { SceneCard } from '../features/scenes/SceneCard'
+import {
+  listCharacters,
+  getCharacter,
+  copyCharacter,
+} from '../features/characters/api'
+import type { Character } from '../features/characters/api'
+import { CharacterCard } from '../features/characters/CharacterCard'
 import { ApplicationSettingsPanel } from '../features/settings/ApplicationSettingsPanel'
-import { SceneEditor } from '../features/scenes/SceneEditor'
-import { SceneRoom } from '../features/dialogue/SceneRoom'
+import { CharacterEditor } from '../features/characters/CharacterEditor'
+import { DialogueRoom } from '../features/dialogue/DialogueRoom'
 import {
   createSession,
   getSession,
@@ -21,18 +25,23 @@ function readLocation() {
     /^\d+$/.test(params.get(key) ?? '')
       ? (params.get(key) ?? undefined)
       : undefined
-  return { sceneId: id('scene'), sessionId: id('session') }
+  return {
+    characterId: id('character') ?? id('scene'),
+    sessionId: id('session'),
+  }
 }
 
-/** 页面拥有首页/沉浸页导航；场景与会话的接口操作保留在各自功能中。 */
+/** 页面拥有首页/沉浸页导航；角色与会话的接口操作保留在各自功能中。 */
 export function HomePage() {
   const [location, setLocation] = useState(readLocation)
-  const [scenes, setScenes] = useState<Scene[]>([])
-  const [selectedScene, setSelectedScene] = useState<Scene | null>(null)
+  const [characters, setCharacters] = useState<Character[]>([])
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(
+    null,
+  )
   const [resolvedSession, setResolvedSession] = useState<string>()
   const [recent, setRecent] = useState<Session[]>([])
   const [category, setCategory] = useState('')
-  const [editing, setEditing] = useState<Scene | 'new' | null>(null)
+  const [editing, setEditing] = useState<Character | 'new' | null>(null)
   const [history, setHistory] = useState(false)
   const [applicationSettings, setApplicationSettings] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -51,11 +60,11 @@ export function HomePage() {
   useEffect(() => {
     const controller = new AbortController()
     Promise.all([
-      listScenes(controller.signal),
+      listCharacters(controller.signal),
       listSessions(controller.signal),
     ])
       .then(([items, sessions]) => {
-        setScenes(items)
+        setCharacters(items)
         setRecent(sessions)
         setLoading(false)
       })
@@ -71,19 +80,19 @@ export function HomePage() {
     const controller = new AbortController()
     const sessionId = location.sessionId
     if (sessionId) {
-      // 场景归属以会话记录为准，恢复旧链接时补齐 URL，不能用 URL 改变归属。
+      // 角色归属以会话记录为准，恢复旧链接时补齐 URL，不能用 URL 改变归属。
       getSession(sessionId, controller.signal)
         .then(async (detail) => {
-          const scene = detail.sceneId
-            ? await getScene(detail.sceneId, controller.signal)
+          const character = detail.characterId
+            ? await getCharacter(detail.characterId, controller.signal)
             : null
           if (controller.signal.aborted) return
-          setSelectedScene(scene)
+          setSelectedCharacter(character)
           const params = new URLSearchParams()
-          if (scene) params.set('scene', scene.id)
+          if (character) params.set('character', character.id)
           params.set('session', sessionId)
           window.history.replaceState(null, '', `?${params}`)
-          setLocation({ sceneId: scene?.id, sessionId })
+          setLocation({ characterId: character?.id, sessionId })
           setResolvedSession(sessionId)
         })
         .catch((err: unknown) => {
@@ -92,29 +101,30 @@ export function HomePage() {
     }
     return () => controller.abort()
   }, [location.sessionId])
-  function navigate(sceneId?: string, sessionId?: string) {
+  function navigate(characterId?: string, sessionId?: string) {
     navigation.current++
     const params = new URLSearchParams()
-    if (sceneId) params.set('scene', sceneId)
+    if (characterId) params.set('character', characterId)
     if (sessionId) params.set('session', sessionId)
     window.history.pushState(null, '', params.size ? `?${params}` : '/')
-    setLocation({ sceneId, sessionId })
+    setLocation({ characterId, sessionId })
     setHistory(false)
     setError('')
   }
-  async function enter(scene: Scene, fresh = false) {
+  async function enter(character: Character, fresh = false) {
     if (busy) return
     setBusy(true)
     setError('')
     const ticket = ++navigation.current
     try {
-      const existing = fresh ? [] : await listSessions(undefined, scene.id)
-      const session = existing[0] ?? (await createSession('新会话', scene.id))
+      const existing = fresh ? [] : await listSessions(undefined, character.id)
+      const session =
+        existing[0] ?? (await createSession('新会话', character.id))
       if (ticket !== navigation.current) return
-      setSelectedScene(scene)
-      navigate(scene.id, session.id)
+      setSelectedCharacter(character)
+      navigate(character.id, session.id)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '无法打开场景。')
+      setError(err instanceof Error ? err.message : '无法打开角色。')
     } finally {
       setBusy(false)
     }
@@ -125,56 +135,75 @@ export function HomePage() {
     setBusy(true)
     try {
       const detail = await getSession(session.id, new AbortController().signal)
-      const scene = detail.sceneId ? await getScene(detail.sceneId) : null
+      const character = detail.characterId
+        ? await getCharacter(detail.characterId)
+        : null
       if (ticket !== navigation.current) return
-      setSelectedScene(scene)
-      navigate(detail.sceneId ?? undefined, session.id)
+      setSelectedCharacter(character)
+      navigate(detail.characterId ?? undefined, session.id)
     } catch (err: unknown) {
       setError(String(err))
     } finally {
       setBusy(false)
     }
   }
-  function saved(scene: Scene) {
-    setScenes((items) =>
-      [...items.filter((item) => item.id !== scene.id), scene]
+  function saved(character: Character) {
+    setCharacters((items) =>
+      [...items.filter((item) => item.id !== character.id), character]
         .filter((item) => item.status === 'active')
         .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1)),
     )
-    if (location.sceneId === scene.id) setSelectedScene(scene)
+    if (location.characterId === character.id) setSelectedCharacter(character)
     setEditing(null)
   }
   function deleted(id: string) {
-    setScenes((items) => items.filter((scene) => scene.id !== id))
+    setCharacters((items) => items.filter((character) => character.id !== id))
     setEditing(null)
-    if (location.sceneId === id) navigate()
+    if (location.characterId === id) navigate()
   }
-  const activeScene =
-    selectedScene?.id === location.sceneId ? selectedScene : null
-  const filtered = scenes.filter(
-    (scene) => !category || scene.category === category,
+  async function copy(character: Character) {
+    if (busy) return
+    const ticket = ++navigation.current
+    setBusy(true)
+    setError('')
+    try {
+      const copied = await copyCharacter(character.id)
+      if (ticket !== navigation.current) return
+      saved(copied)
+      setCategory('')
+      setEditing(copied)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '无法复制角色。')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const activeCharacter =
+    selectedCharacter?.id === location.characterId ? selectedCharacter : null
+  const filtered = characters.filter(
+    (character) => !category || character.category === category,
   )
   return (
     <>
       {location.sessionId && resolvedSession !== location.sessionId ? (
         <main className="lobby">
           <button className="quiet-button" onClick={() => navigate()}>
-            返回场景选择
+            返回角色选择
           </button>
           <p role={error ? 'alert' : 'status'}>{error || '正在打开会话…'}</p>
         </main>
       ) : location.sessionId ? (
-        <SceneRoom
+        <DialogueRoom
           key={location.sessionId}
           sessionId={location.sessionId}
-          scene={activeScene}
+          character={activeCharacter}
           onBack={() => navigate()}
-          onSelect={(id) => navigate(location.sceneId, id)}
+          onSelect={(id) => navigate(location.characterId, id)}
           onNew={() => {
-            if (activeScene) void enter(activeScene, true)
+            if (activeCharacter) void enter(activeCharacter, true)
           }}
-          onSceneDeleted={deleted}
-          onSceneChanged={saved}
+          onCharacterDeleted={deleted}
+          onCharacterChanged={saved}
           initialDraft={drafts[location.sessionId] ?? ''}
           onDraftChange={(value) => {
             const id = location.sessionId
@@ -211,7 +240,7 @@ export function HomePage() {
                 onClick={() => setEditing('new')}
               >
                 <Icon name="plus" />
-                新建场景
+                新建角色
               </button>
             </div>
           </header>
@@ -237,37 +266,39 @@ export function HomePage() {
               </div>
             </section>
             <div className="section-bar">
-              <div className="filters" role="group" aria-label="场景分类">
-                {['', ...new Set(scenes.map((scene) => scene.category))].map(
-                  (item) => (
-                    <button
-                      key={item}
-                      className={`filter ${category === item ? 'active' : ''}`}
-                      aria-pressed={category === item}
-                      onClick={() => setCategory(item)}
-                    >
-                      {item || '全部场景'}
-                    </button>
-                  ),
-                )}
+              <div className="filters" role="group" aria-label="角色分类">
+                {[
+                  '',
+                  ...new Set(characters.map((character) => character.category)),
+                ].map((item) => (
+                  <button
+                    key={item}
+                    className={`filter ${category === item ? 'active' : ''}`}
+                    aria-pressed={category === item}
+                    onClick={() => setCategory(item)}
+                  >
+                    {item || '全部角色'}
+                  </button>
+                ))}
               </div>
             </div>
-            {loading && <p role="status">正在加载场景…</p>}
-            <section className="scene-grid" aria-label="选择对话场景">
-              {filtered.map((scene, index) => (
-                <SceneCard
-                  key={scene.id}
-                  scene={scene}
+            {loading && <p role="status">正在加载角色…</p>}
+            <section className="character-grid" aria-label="选择对话角色">
+              {filtered.map((character, index) => (
+                <CharacterCard
+                  key={character.id}
+                  character={character}
                   index={index}
                   count={filtered.length}
                   disabled={busy}
-                  onEnter={() => void enter(scene)}
-                  onEdit={() => setEditing(scene)}
+                  onEnter={() => void enter(character)}
+                  onEdit={() => setEditing(character)}
+                  onCopy={() => void copy(character)}
                 />
               ))}
             </section>
             {!loading && !filtered.length && (
-              <p>暂无场景，点击“新建场景”开始。</p>
+              <p>暂无角色，点击“新建角色”开始。</p>
             )}
             {recent[0] && (
               <section className="return-section">
@@ -316,8 +347,8 @@ export function HomePage() {
         </SidePanel>
       )}
       {editing && (
-        <SceneEditor
-          scene={editing === 'new' ? undefined : editing}
+        <CharacterEditor
+          character={editing === 'new' ? undefined : editing}
           onClose={() => setEditing(null)}
           onSaved={saved}
           onDeleted={deleted}

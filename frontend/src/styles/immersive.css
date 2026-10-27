@@ -171,13 +171,13 @@ h1 {
   margin-left: 7px;
 }
 
-.scene-grid {
+.character-grid {
   display: grid;
   grid-template-columns: 1.16fr 1fr 1fr;
   gap: 21px;
 }
 
-.scene-card {
+.character-card {
   position: relative;
   height: clamp(340px, 29vw, 424px);
   border-radius: 12px;
@@ -189,7 +189,7 @@ h1 {
   outline-offset: 5px;
 }
 
-.scene-card::after {
+.character-card::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -203,7 +203,7 @@ h1 {
   );
 }
 
-.scene-card img {
+.character-card img {
   position: absolute;
   width: 100%;
   height: 100%;
@@ -216,12 +216,12 @@ h1 {
   filter: saturate(0.65) brightness(0.83);
 }
 
-.scene-card:hover img {
+.character-card:hover img {
   transform: scale(1.045);
   filter: saturate(0.85) brightness(0.96);
 }
 
-.scene-card:hover .card-enter {
+.character-card:hover .card-enter {
   background: #e0dccd;
   color: #242725;
   transform: rotate(-35deg);
@@ -247,7 +247,7 @@ h1 {
   letter-spacing: 0.7px;
 }
 
-.scene-number {
+.character-number {
   color: #ffffff99;
   font-size: 10px;
   letter-spacing: 1px;
@@ -1021,13 +1021,13 @@ input[type="range"] {
     padding-top: 80px;
     padding-bottom: 55px;
   }
-  .scene-card {
+  .character-card {
     height: 450px;
   }
 }
 
 @media (max-width: 900px) {
-  .scene-grid {
+  .character-grid {
     gap: 13px;
   }
   .card-bottom {
@@ -1119,14 +1119,14 @@ input[type="range"] {
   .section-bar {
     margin-bottom: 18px;
   }
-  .scene-grid {
+  .character-grid {
     grid-template-columns: 1fr;
     gap: 19px;
   }
-  .scene-card {
+  .character-card {
     height: 360px;
   }
-  .scene-card.cafe img {
+  .character-card.cafe img {
     object-position: 60% 32%;
   }
   .card-bottom {
@@ -1473,39 +1473,65 @@ input[type="range"] {
   }
 }
 
-.scene-card-wrap {
+.character-card-wrap {
   position: relative;
   min-width: 0;
 }
-.scene-card-wrap .scene-card {
+.character-card-wrap .character-card {
   width: 100%;
 }
-.card-edit {
+.card-actions {
   position: absolute;
   right: 18px;
   top: 66px;
   z-index: 2;
-  background: #15191866;
+}
+.card-actions > button {
+  background: #151918bb;
+}
+.card-action-list {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  width: 158px;
+  padding: 6px;
+  background: #2d3330;
+  border: 1px solid #ffffff22;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px #0005;
+}
+.card-action-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+}
+.card-action-list button:hover {
+  background: #ffffff0c;
 }
 .error-note {
   color: #ffc1ae;
   font-size: 13px;
   line-height: 1.6;
 }
-.scene-form {
+.character-form {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
-.scene-form label {
+.character-form label {
   display: flex;
   flex-direction: column;
   gap: 8px;
   font-size: 13px;
 }
-.scene-form input,
-.scene-form textarea,
-.scene-form select,
+.character-form input,
+.character-form textarea,
+.character-form select,
 .legacy-preset {
   color: #efefeb;
   border: 1px solid #ffffff26;
@@ -1514,7 +1540,7 @@ input[type="range"] {
   padding: 12px;
   width: 100%;
 }
-.scene-form select,
+.character-form select,
 .legacy-preset {
   color-scheme: dark;
   font: inherit;
@@ -1522,12 +1548,12 @@ input[type="range"] {
   background-color: #28302d;
 }
 /* 原生弹出菜单需要不透明底色，避免浅色系统菜单沿用表单的浅色文字。 */
-.scene-form select option,
+.character-form select option,
 .legacy-preset option {
   background-color: #28302d;
   color: #efefeb;
 }
-.scene-form select option:disabled,
+.character-form select option:disabled,
 .legacy-preset option:disabled {
   color: #adb5af;
 }
@@ -1536,7 +1562,7 @@ input[type="range"] {
   flex-direction: column;
   gap: 16px;
 }
-.scene-form textarea {
+.character-form textarea {
   min-height: 200px;
   resize: vertical;
 }
@@ -1570,7 +1596,7 @@ input[type="range"] {
   max-height: 90px;
 }
 @media (max-width: 650px) {
-  .scene-card-wrap .scene-card {
+  .character-card-wrap .character-card {
     width: 100%;
   }
   .header-actions {

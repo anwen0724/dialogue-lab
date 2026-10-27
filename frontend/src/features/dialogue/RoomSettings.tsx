@@ -1,24 +1,24 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { uploadImage } from '../scenes/api'
-import type { Scene } from '../scenes/api'
+import { uploadImage } from '../characters/api'
+import type { Character } from '../characters/api'
 import type { Preferences } from './preferences'
 import { Icon } from '../../shared/ui/Icon'
-import { VoiceSettings } from '../scenes/VoiceSettings'
+import { VoiceSettings } from '../characters/VoiceSettings'
 
-/** 对话偏好由浏览器保存；背景上传直接修改服务端场景。 */
+/** 对话偏好由浏览器保存；背景上传直接修改服务端角色。 */
 export function RoomSettings({
-  scene,
+  character,
   preferences,
   onPreferencesChange,
-  onSceneChanged,
+  onCharacterChanged,
   onEdit,
   children,
 }: {
-  scene: Scene | null
+  character: Character | null
   preferences: Preferences
   onPreferencesChange: (value: Preferences) => void
-  onSceneChanged: (scene: Scene) => void
+  onCharacterChanged: (character: Character) => void
   onEdit: () => void
   children?: ReactNode
 }) {
@@ -26,11 +26,11 @@ export function RoomSettings({
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   async function changeBackground(file?: File) {
-    if (!scene || !file || uploading) return
+    if (!character || !file || uploading) return
     setUploading(true)
     setError('')
     try {
-      onSceneChanged(await uploadImage(scene.id, 'background', file))
+      onCharacterChanged(await uploadImage(character.id, 'background', file))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '背景上传失败。')
     } finally {
@@ -44,11 +44,11 @@ export function RoomSettings({
           {error}
         </p>
       )}
-      {scene && (
+      {character && (
         <section className="setting-section">
           <h3>
             <button className="setting-navigation" onClick={onEdit}>
-              场景资料与身份
+              角色资料与身份
               <Icon name="arrow" />
             </button>
           </h3>
@@ -56,15 +56,15 @@ export function RoomSettings({
       )}
       <section className="setting-section">
         <h3>视觉氛围</h3>
-        {scene && (
+        {character && (
           <>
             <div className="background-preview">
-              {scene.background && (
-                <img src={scene.background} alt="背景预览" />
+              {character.background && (
+                <img src={character.background} alt="背景预览" />
               )}
             </div>
             <label className="upload-button">
-              更换场景背景
+              更换角色背景
               <input
                 disabled={uploading}
                 hidden
@@ -96,8 +96,12 @@ export function RoomSettings({
           }
         />
       </section>
-      {scene && (
-        <VoiceSettings key={scene.id} scene={scene} onSaved={onSceneChanged} />
+      {character && (
+        <VoiceSettings
+          key={character.id}
+          character={character}
+          onSaved={onCharacterChanged}
+        />
       )}
       <section className="setting-section">
         <h3>对话方式</h3>

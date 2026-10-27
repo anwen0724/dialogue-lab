@@ -1,4 +1,4 @@
-/** 只保存当前浏览器的交互偏好；场景资料由服务端保存。 */
+/** 只保存当前浏览器的交互偏好；角色资料由服务端保存。 */
 export type Preferences = {
   allowInterrupt: boolean
   subtitles: boolean

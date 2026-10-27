@@ -10,16 +10,16 @@ from ai.providers.deepseek import create_deepseek_provider
 from ai.providers.openai import create_openai_provider
 from dotenv import dotenv_values
 
+from dialogue_lab.characters.service import CharacterService
 from dialogue_lab.context.manager import ContextManager
 from dialogue_lab.context.system_prompt import SystemPrompts
 from dialogue_lab.runtime.scheduler import Scheduler
 from dialogue_lab.runtime.settings import ReplySettings
-from dialogue_lab.scenes.service import SceneService
 from dialogue_lab.sessions.service import SessionService
 from dialogue_lab.settings.service import SettingsService
+from dialogue_lab.storage.character_store import CharacterStore
 from dialogue_lab.storage.compaction_store import CompactionStore
 from dialogue_lab.storage.database import Database
-from dialogue_lab.storage.scene_store import SceneStore
 from dialogue_lab.storage.session_store import SessionStore
 from dialogue_lab.voice.catalog import get_speech_model
 from dialogue_lab.voice.synthesis import Synthesis
@@ -54,8 +54,8 @@ class Services:
             Path(__file__).parent / "resources" / "prompts",
             settings.data_directory / "prompts",
         )
-        self.scenes = SceneService(
-            SceneStore(self.database),
+        self.characters = CharacterService(
+            CharacterStore(self.database),
             self.prompts,
             settings.data_directory,
             self.application_settings,
@@ -82,7 +82,7 @@ class Services:
             model,
             self.prompts,
             self.compactions,
-            scene_store=self.scenes.store,
+            character_store=self.characters.store,
         )
         scheduler = Scheduler(
             session_id,
@@ -97,7 +97,7 @@ class Services:
         return scheduler
 
     async def reply_settings(self, session_id):
-        """读取全局选择及场景音色；闭包只捕获本轮确定的值。"""
+        """读取全局选择及角色音色；闭包只捕获本轮确定的值。"""
         selection = self.application_settings.current
         model = self.models.get_model(selection.dialogue.provider_id, selection.dialogue.model_id)
         options = SimpleOptions(
@@ -109,14 +109,14 @@ class Services:
             timeout=120,
         )
         speech = get_speech_model("tts", selection.tts)
-        scene = await self.scenes.store.find_for_session(session_id)
-        # 无场景的旧会话保留原配置；场景音色为空时不能借用该值。
-        voice = scene["tts_voice"] if scene is not None else self.settings.tts_voice
+        character = await self.characters.store.find_for_session(session_id)
+        # 无角色的旧会话保留原配置；角色音色为空时不能借用该值。
+        voice = character["tts_voice"] if character is not None else self.settings.tts_voice
         key = self.application_settings.environment.get(speech.credential_env, "")
         if voice not in dict(speech.voices):
             notice = (
-                "请在场景设置中重新选择人物声音，文字交流仍可继续。"
-                if scene is not None
+                "请在角色设置中重新选择人物声音，文字交流仍可继续。"
+                if character is not None
                 else "旧会话的音色与当前合成模型不兼容，请修改原音色配置。文字交流仍可继续。"
             )
             return ReplySettings(model, options, None, notice)

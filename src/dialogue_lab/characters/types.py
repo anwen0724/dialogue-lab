@@ -1,9 +1,9 @@
-"""场景表单的边界校验。"""
+"""角色表单的边界校验。"""
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class SceneCreate(BaseModel):
+class CharacterCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=200)
     category: str = Field(min_length=1, max_length=60)
@@ -12,7 +12,7 @@ class SceneCreate(BaseModel):
     tts_voice: str = Field(min_length=1, max_length=200)
 
 
-class SceneUpdate(BaseModel):
+class CharacterUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     category: str | None = Field(default=None, min_length=1, max_length=60)

@@ -28,13 +28,17 @@ async def save_settings(body: ApplicationSettings, request: Request):
 
 @router.post("/settings/preview")
 async def preview_settings(body: ApplicationSettings, request: Request):
-    """只读检查目标 TTS 的音色兼容性，覆盖仍可打开的归档场景。"""
+    """只读检查目标 TTS 的音色兼容性，覆盖仍可打开的归档角色。"""
     services = request.app.state.services
     services.application_settings.validate(body)
     voices = dict(get_speech_model("tts", body.tts).voices)
     return [
-        {"scene_id": str(row["scene_id"]), "name": row["name"], "tts_voice": row["tts_voice"]}
-        for row in await services.scenes.store.list(include_archived=True)
+        {
+            "character_id": str(row["character_id"]),
+            "name": row["name"],
+            "tts_voice": row["tts_voice"],
+        }
+        for row in await services.characters.store.list(include_archived=True)
         if row["tts_voice"] not in voices
     ]
 

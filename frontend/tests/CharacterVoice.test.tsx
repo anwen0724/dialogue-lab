@@ -15,7 +15,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('场景音色失配时明确提示，选取兼容音色后保存到当前场景', async () => {
+test('角色音色失配时明确提示，选取兼容音色后保存到当前角色', async () => {
   let saved: unknown
   vi.stubGlobal(
     'fetch',
@@ -36,7 +36,7 @@ test('场景音色失配时明确提示，选取兼容音色后保存到当前�
       else {
         saved = JSON.parse(String(options?.body))
         result = {
-          scene_id: '8',
+          character_id: '8',
           name: '练习',
           category: '英语',
           character_name: 'Emma',
@@ -53,7 +53,7 @@ test('场景音色失配时明确提示，选取兼容音色后保存到当前�
   const updated = vi.fn()
   render(
     <RoomSettings
-      scene={{
+      character={{
         id: '8',
         name: '练习',
         category: '英语',
@@ -66,7 +66,7 @@ test('场景音色失配时明确提示，选取兼容音色后保存到当前�
       }}
       preferences={loadPreferences()}
       onPreferencesChange={() => {}}
-      onSceneChanged={updated}
+      onCharacterChanged={updated}
       onEdit={() => {}}
     />,
   )

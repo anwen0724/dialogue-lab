@@ -33,19 +33,23 @@ def test_failed_file_replace_keeps_previous_settings(monkeypatch, tmp_path):
 
 
 @pytest.mark.usefixtures("database")
-def test_tts_preview_reports_scenes_without_rewriting_their_voice(monkeypatch, tmp_path):
+def test_tts_preview_reports_characters_without_rewriting_their_voice(monkeypatch, tmp_path):
     monkeypatch.setenv("DIALOGUE_LAB_DATA_DIRECTORY", str(tmp_path))
     with TestClient(create_app()) as client:
         settings = client.get("/api/settings").json()
-        before = client.get("/api/scenes").json()
+        before = client.get("/api/characters").json()
         result = client.post("/api/settings/preview", json=settings)
         assert result.status_code == 200
         assert result.json() == [
-            {"scene_id": scene["scene_id"], "name": scene["name"], "tts_voice": scene["tts_voice"]}
-            for scene in before
-            if not scene["voice_available"]
+            {
+                "character_id": character["character_id"],
+                "name": character["name"],
+                "tts_voice": character["tts_voice"],
+            }
+            for character in before
+            if not character["voice_available"]
         ]
-        assert client.get("/api/scenes").json() == before
+        assert client.get("/api/characters").json() == before
 
 
 def test_model_selection_survives_restart_and_overrides_initial_environment(monkeypatch, tmp_path):

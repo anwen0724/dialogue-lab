@@ -8,21 +8,21 @@ import {
   fireEvent,
 } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
-import { SceneRoom } from '../src/features/dialogue/SceneRoom'
+import { DialogueRoom } from '../src/features/dialogue/DialogueRoom'
 import { BrowserSocket, installBrowserAudio } from './browserAudio'
 
 function Dialogue({ sessionId }: { sessionId: string }) {
   return (
-    <SceneRoom
+    <DialogueRoom
       sessionId={sessionId}
-      scene={null}
+      character={null}
       initialDraft=""
       onDraftChange={() => {}}
       onBack={() => {}}
       onSelect={() => {}}
       onNew={() => {}}
-      onSceneDeleted={() => {}}
-      onSceneChanged={() => {}}
+      onCharacterDeleted={() => {}}
+      onCharacterChanged={() => {}}
     />
   )
 }

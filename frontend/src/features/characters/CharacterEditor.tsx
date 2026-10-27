@@ -1,43 +1,48 @@
 import { useEffect, useState } from 'react'
 import { SidePanel } from '../../shared/ui/SidePanel'
-import { deleteScene, getScene, saveScene, uploadImage } from './api'
-import type { Scene, SceneForm } from './api'
+import {
+  deleteCharacter,
+  getCharacter,
+  saveCharacter,
+  uploadImage,
+} from './api'
+import type { Character, CharacterForm } from './api'
 import { getSettings, getVoices } from '../settings/api'
 import type { VoiceOption } from '../settings/api'
 
-/** 用户编辑自己的场景；保存失败保留草稿，已创建的记录不会重复创建。 */
-export function SceneEditor({
-  scene,
+/** 用户编辑自己的角色；保存失败保留草稿，已创建的记录不会重复创建。 */
+export function CharacterEditor({
+  character,
   onClose,
   onSaved,
   onDeleted,
   onBack = onClose,
-  backLabel = '返回场景列表',
+  backLabel = '返回角色列表',
 }: {
-  scene?: Scene
+  character?: Character
   onClose: () => void
-  onSaved: (scene: Scene) => void
+  onSaved: (character: Character) => void
   onDeleted: (id: string) => void
   onBack?: () => void
   backLabel?: string
 }) {
-  const [form, setForm] = useState<SceneForm>({
-    name: scene?.name ?? '',
-    category: scene?.category ?? '',
-    character_name: scene?.characterName ?? '',
+  const [form, setForm] = useState<CharacterForm>({
+    name: character?.name ?? '',
+    category: character?.category ?? '',
+    character_name: character?.characterName ?? '',
     system_prompt: '',
-    ...(scene ? {} : { tts_voice: '' }),
+    ...(character ? {} : { tts_voice: '' }),
   })
-  const [savedId, setSavedId] = useState(scene?.id)
+  const [savedId, setSavedId] = useState(character?.id)
   const [cover, setCover] = useState<File>()
   const [background, setBackground] = useState<File>()
-  const [loading, setLoading] = useState(Boolean(scene))
+  const [loading, setLoading] = useState(Boolean(character))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [voices, setVoices] = useState<VoiceOption[]>([])
   useEffect(() => {
-    if (scene) return
+    if (character) return
     const controller = new AbortController()
     getSettings(controller.signal)
       .then((settings) => getVoices(settings.tts, controller.signal))
@@ -48,11 +53,11 @@ export function SceneEditor({
         if (!controller.signal.aborted) setError(String(err))
       })
     return () => controller.abort()
-  }, [scene])
+  }, [character])
   useEffect(() => {
-    if (!scene) return
+    if (!character) return
     const controller = new AbortController()
-    getScene(scene.id, controller.signal)
+    getCharacter(character.id, controller.signal)
       .then((detail) => {
         setForm({
           name: detail.name,
@@ -66,13 +71,13 @@ export function SceneEditor({
         if (!controller.signal.aborted) setError(String(err))
       })
     return () => controller.abort()
-  }, [scene])
+  }, [character])
   async function save(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
     setError('')
     try {
-      let result = await saveScene(form, savedId)
+      let result = await saveCharacter(form, savedId)
       setSavedId(result.id)
       if (cover) {
         result = await uploadImage(result.id, 'cover', cover)
@@ -93,7 +98,7 @@ export function SceneEditor({
     if (!savedId) return
     setBusy(true)
     try {
-      await deleteScene(savedId)
+      await deleteCharacter(savedId)
       onDeleted(savedId)
     } catch (err: unknown) {
       setError(String(err))
@@ -103,7 +108,7 @@ export function SceneEditor({
   }
   return (
     <SidePanel
-      title={scene ? '场景资料与身份' : '新建场景'}
+      title={character ? '角色资料与身份' : '新建角色'}
       backLabel={backLabel}
       onBack={() => {
         if (!busy) onBack()
@@ -112,9 +117,9 @@ export function SceneEditor({
         if (!busy) onClose()
       }}
     >
-      <form className="panel-content scene-form" onSubmit={save}>
+      <form className="panel-content character-form" onSubmit={save}>
         <label>
-          场景名称
+          角色名称
           <input
             required
             maxLength={200}
@@ -166,7 +171,7 @@ export function SceneEditor({
             onChange={(e) => setCover(e.target.files?.[0])}
           />
         </label>
-        {!scene && (
+        {!character && (
           <label>
             人物音色
             <select
@@ -205,22 +210,22 @@ export function SceneEditor({
         )}
         <button
           className="primary-button"
-          disabled={loading || busy || (!scene && !form.tts_voice)}
+          disabled={loading || busy || (!character && !form.tts_voice)}
         >
-          {busy ? '正在保存…' : '保存场景'}
+          {busy ? '正在保存…' : '保存角色'}
         </button>
         {savedId && (
           <>
             {deleting ? (
               <>
-                <p>有会话的场景会归档并保留记录。没有会话的场景会删除。</p>
+                <p>有会话的角色会归档并保留记录。没有会话的角色会删除。</p>
                 <button
                   type="button"
                   className="danger-button"
                   disabled={busy}
                   onClick={() => void remove()}
                 >
-                  确认删除场景
+                  确认删除角色
                 </button>
               </>
             ) : (
@@ -230,7 +235,7 @@ export function SceneEditor({
                 disabled={busy}
                 onClick={() => setDeleting(true)}
               >
-                删除场景
+                删除角色
               </button>
             )}
           </>

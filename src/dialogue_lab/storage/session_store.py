@@ -3,8 +3,8 @@
 from sqlalchemy import func, insert, literal, select, update
 
 from dialogue_lab.sessions.types import SessionError
+from dialogue_lab.storage.character_store import get_character
 from dialogue_lab.storage.database import Database
-from dialogue_lab.storage.scene_store import get_scene
 from dialogue_lab.storage.tables import compactions, entries, messages, sessions
 
 
@@ -12,16 +12,18 @@ class SessionStore:
     def __init__(self, database: Database):
         self.database = database
 
-    async def create(self, title: str, scene_id=None):
+    async def create(self, title: str, character_id=None):
         async with self.database.engine.begin() as connection:
-            if scene_id is not None:
-                scene = await get_scene(connection, scene_id, lock=True)
-                if scene["status"] != "active":
-                    raise SessionError("SCENE_ARCHIVED", "已归档的场景不能新建会话。")
+            if character_id is not None:
+                character = await get_character(connection, character_id, lock=True)
+                if character["status"] != "active":
+                    raise SessionError("CHARACTER_ARCHIVED", "已归档的角色不能新建会话。")
             return (
                 (
                     await connection.execute(
-                        insert(sessions).values(title=title, scene_id=scene_id).returning(sessions)
+                        insert(sessions)
+                        .values(title=title, character_id=character_id)
+                        .returning(sessions)
                     )
                 )
                 .mappings()
@@ -43,13 +45,13 @@ class SessionStore:
                 raise SessionError("SESSION_NOT_FOUND", "会话不存在。", 404)
             return row
 
-    async def list(self, scene_id=None):
+    async def list(self, character_id=None):
         """一次列表读取加一次路径查询，避免逐个会话查询消息。"""
         query = select(sessions).order_by(
             sessions.c.updated_at.desc(), sessions.c.session_id.desc()
         )
-        if scene_id is not None:
-            query = query.where(sessions.c.scene_id == scene_id)
+        if character_id is not None:
+            query = query.where(sessions.c.character_id == character_id)
         async with self.database.engine.connect() as connection:
             rows = [dict(row) for row in (await connection.execute(query)).mappings()]
             if not rows:
@@ -129,7 +131,7 @@ class SessionStore:
             if (
                 kind == "user_message"
                 and payload.get("source") != "opening"
-                and session["scene_id"]
+                and session["character_id"]
             ):
                 previous = (
                     await connection.execute(

@@ -4,7 +4,7 @@ export type Session = {
   id: string
   title: string
   status: 'active' | 'archived'
-  sceneId: string | null
+  characterId: string | null
   latestMessage: string
   messageCount: number
 }
@@ -67,15 +67,17 @@ function parseSession(value: unknown): Session {
   )
     throw new Error('会话格式无效。')
   if (
-    value.scene_id != null &&
-    (typeof value.scene_id !== 'string' || !/^\d+$/.test(value.scene_id))
+    value.character_id != null &&
+    (typeof value.character_id !== 'string' ||
+      !/^\d+$/.test(value.character_id))
   )
-    throw new Error('会话场景无效。')
+    throw new Error('会话角色无效。')
   return {
     id: value.session_id,
     title: value.title,
     status: value.status,
-    sceneId: typeof value.scene_id === 'string' ? value.scene_id : null,
+    characterId:
+      typeof value.character_id === 'string' ? value.character_id : null,
     latestMessage:
       typeof value.latest_message === 'string' ? value.latest_message : '',
     messageCount:
@@ -93,21 +95,21 @@ export async function getSession(id: string, signal: AbortSignal) {
   return { ...session, messages: value.messages.map(parseMessage) }
 }
 
-export async function listSessions(signal?: AbortSignal, sceneId?: string) {
+export async function listSessions(signal?: AbortSignal, characterId?: string) {
   const value = await requestJson(
-    sceneId ? `/sessions?scene_id=${sceneId}` : '/sessions',
+    characterId ? `/sessions?character_id=${characterId}` : '/sessions',
     { signal },
   )
   if (!Array.isArray(value)) throw new Error('会话列表无效。')
   return value.map(parseSession)
 }
 
-export async function createSession(title: string, sceneId?: string) {
+export async function createSession(title: string, characterId?: string) {
   return parseSession(
     await requestJson('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, scene_id: sceneId }),
+      body: JSON.stringify({ title, character_id: characterId }),
     }),
   )
 }
