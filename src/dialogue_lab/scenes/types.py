@@ -9,6 +9,7 @@ class SceneCreate(BaseModel):
     category: str = Field(min_length=1, max_length=60)
     character_name: str = Field(min_length=1, max_length=100)
     system_prompt: str = Field(min_length=1, max_length=32000)
+    tts_voice: str = Field(min_length=1, max_length=200)
 
 
 class SceneUpdate(BaseModel):
@@ -17,3 +18,4 @@ class SceneUpdate(BaseModel):
     category: str | None = Field(default=None, min_length=1, max_length=60)
     character_name: str | None = Field(default=None, min_length=1, max_length=100)
     system_prompt: str | None = Field(default=None, min_length=1, max_length=32000)
+    tts_voice: str | None = Field(default=None, min_length=1, max_length=200)

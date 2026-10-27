@@ -5,11 +5,13 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
+import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from dialogue_lab.runtime.events import Submit
 from dialogue_lab.sessions.types import SessionError
+from dialogue_lab.voice.catalog import get_speech_model
 from dialogue_lab.voice.recognition import Recognition, VoiceInputError
 
 router = APIRouter()
@@ -210,13 +212,15 @@ class SessionConnection:
             )
         finally:
             self.connected = False
-            if self.recording_task is not None:
-                self.recording_task.cancel()
-                await asyncio.gather(self.recording_task, return_exceptions=True)
-            await self.services.release(self.session_id, self.scheduler)
-            await asyncio.gather(*self.tasks, return_exceptions=True)
-            writer.cancel()
-            await asyncio.gather(writer, return_exceptions=True)
+            # 断线后的外层取消不能再次中断识别关闭或控制权释放。
+            with anyio.CancelScope(shield=True):
+                if self.recording_task is not None:
+                    self.recording_task.cancel()
+                    await asyncio.gather(self.recording_task, return_exceptions=True)
+                await self.services.release(self.session_id, self.scheduler)
+                await asyncio.gather(*self.tasks, return_exceptions=True)
+                writer.cancel()
+                await asyncio.gather(writer, return_exceptions=True)
 
     async def resolve_preset(self, fallback):
         if self.scene_id is None:
@@ -228,11 +232,14 @@ class SessionConnection:
         epoch = self.scheduler.input_epoch
         try:
             await asyncio.to_thread(self.services.prompts.load, await self.resolve_preset(preset))
-            settings = self.services.settings
-            key = settings.stt_api_key.get_secret_value()
+            settings = self.services.application_settings
+            selected = get_speech_model("stt", settings.current.stt)
+            key = settings.environment.get(selected.credential_env, "")
             if not key:
                 raise SessionError("STT_NOT_CONFIGURED", "请配置语音识别密钥后重启后端。")
-            async with Recognition(api_key=key, model=settings.stt_model) as recognition:
+            async with Recognition(
+                provider=selected.provider_id, api_key=key, model=selected.model_id
+            ) as recognition:
                 self.recognition = recognition
                 if self.stop_recording_requested:
                     await recognition.finish_input()

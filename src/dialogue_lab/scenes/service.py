@@ -5,11 +5,14 @@ import re
 from uuid import uuid4
 
 from dialogue_lab.scenes.images import save_image
+from dialogue_lab.sessions.types import SessionError
+from dialogue_lab.voice.catalog import get_speech_model
 
 
 class SceneService:
-    def __init__(self, store, prompts, data_directory):
+    def __init__(self, store, prompts, data_directory, application_settings):
         self.store, self.prompts = store, prompts
+        self.application_settings = application_settings
         self.directory = data_directory / "prompts"
         self.images = data_directory / "images"
 
@@ -30,6 +33,12 @@ class SceneService:
     async def save(self, values, scene_id=None):
         """先写完整正文，再切换数据库引用；正在进行的调用仍可读取旧文件。"""
         values = dict(values)
+        if "tts_voice" in values:
+            model = get_speech_model("tts", self.application_settings.current.tts)
+            if values["tts_voice"] not in dict(model.voices):
+                raise SessionError(
+                    "VOICE_UNSUPPORTED", "该音色不支持当前 TTS 模型，请重新选择。", 422
+                )
         content = values.pop("system_prompt", None)
         path = None
         if content is not None:
@@ -75,19 +84,24 @@ class SceneService:
         if reference and re.fullmatch(r"/api/media/[a-f0-9]{32}\.(jpg|png|webp)", reference):
             (self.images / reference.rsplit("/", 1)[1]).unlink(missing_ok=True)
 
-    @staticmethod
-    def view(row):
+    def view(self, row):
         return {
             "scene_id": str(row["scene_id"]),
+            "voice_available": self.voice_available(row["tts_voice"]),
             **{
                 key: row[key]
                 for key in (
                     "name",
                     "category",
                     "character_name",
+                    "tts_voice",
                     "cover_image",
                     "background_image",
                     "status",
                 )
             },
         }
+
+    def voice_available(self, voice):
+        """失配音色保留原值；界面和运行时使用同一兼容规则。"""
+        return voice in dict(get_speech_model("tts", self.application_settings.current.tts).voices)

@@ -8,9 +8,11 @@ class ScriptedAdapter:
     def __init__(self, replies):
         self.replies = iter(replies)
         self.inputs = []
+        self.calls = []
 
     async def stream_simple(self, model, context, auth, options):
         self.inputs.append(context)
+        self.calls.append((model, auth, options))
         message = AssistantMessage(model.provider, model.id, model.api)
         yield AssistantMessageEvent("start", message)
         block = TextContent()

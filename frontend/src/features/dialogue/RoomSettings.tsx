@@ -4,6 +4,7 @@ import { uploadImage } from '../scenes/api'
 import type { Scene } from '../scenes/api'
 import type { Preferences } from './preferences'
 import { Icon } from '../../shared/ui/Icon'
+import { VoiceSettings } from '../scenes/VoiceSettings'
 
 /** 对话偏好由浏览器保存；背景上传直接修改服务端场景。 */
 export function RoomSettings({
@@ -95,6 +96,9 @@ export function RoomSettings({
           }
         />
       </section>
+      {scene && (
+        <VoiceSettings key={scene.id} scene={scene} onSaved={onSceneChanged} />
+      )}
       <section className="setting-section">
         <h3>对话方式</h3>
         <div className="setting-row">

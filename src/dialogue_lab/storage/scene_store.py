@@ -10,19 +10,12 @@ class SceneStore:
     def __init__(self, database):
         self.database = database
 
-    async def list(self):
+    async def list(self, *, include_archived=False):
+        query = select(scenes).order_by(scenes.c.scene_id)
+        if not include_archived:
+            query = query.where(scenes.c.status == "active")
         async with self.database.engine.connect() as connection:
-            return (
-                (
-                    await connection.execute(
-                        select(scenes)
-                        .where(scenes.c.status == "active")
-                        .order_by(scenes.c.scene_id)
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            return (await connection.execute(query)).mappings().all()
 
     async def get(self, scene_id):
         async with self.database.engine.connect() as connection:

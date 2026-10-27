@@ -22,6 +22,16 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+@pytest.fixture(autouse=True)
+def application_files(monkeypatch, tmp_path):
+    """HTTP 测试不读取或写入用户的设置、身份文档及图片。"""
+    monkeypatch.setenv("DIALOGUE_LAB_DATA_DIRECTORY", str(tmp_path / "data"))
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    (prompts / "general.md").write_text("Be brief.", encoding="utf-8")
+    monkeypatch.setenv("DIALOGUE_LAB_PROMPTS_DIRECTORY", str(prompts))
+
+
 @pytest.fixture(scope="session")
 def isolated_schema():
     """每轮测试独占一个 schema；业务库的 public 不进入搜索路径。"""

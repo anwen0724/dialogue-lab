@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { SidePanel } from '../../shared/ui/SidePanel'
 import { deleteScene, getScene, saveScene, uploadImage } from './api'
 import type { Scene, SceneForm } from './api'
+import { getSettings, getVoices } from '../settings/api'
+import type { VoiceOption } from '../settings/api'
 
 /** 用户编辑自己的场景；保存失败保留草稿，已创建的记录不会重复创建。 */
 export function SceneEditor({
@@ -24,6 +26,7 @@ export function SceneEditor({
     category: scene?.category ?? '',
     character_name: scene?.characterName ?? '',
     system_prompt: '',
+    ...(scene ? {} : { tts_voice: '' }),
   })
   const [savedId, setSavedId] = useState(scene?.id)
   const [cover, setCover] = useState<File>()
@@ -32,6 +35,20 @@ export function SceneEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [voices, setVoices] = useState<VoiceOption[]>([])
+  useEffect(() => {
+    if (scene) return
+    const controller = new AbortController()
+    getSettings(controller.signal)
+      .then((settings) => getVoices(settings.tts, controller.signal))
+      .then((choices) => {
+        if (!controller.signal.aborted) setVoices(choices)
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) setError(String(err))
+      })
+    return () => controller.abort()
+  }, [scene])
   useEffect(() => {
     if (!scene) return
     const controller = new AbortController()
@@ -149,6 +166,28 @@ export function SceneEditor({
             onChange={(e) => setCover(e.target.files?.[0])}
           />
         </label>
+        {!scene && (
+          <label>
+            人物音色
+            <select
+              required
+              value={form.tts_voice ?? ''}
+              disabled={busy || !voices.length}
+              onChange={(event) =>
+                setForm({ ...form, tts_voice: event.target.value })
+              }
+            >
+              <option value="" disabled>
+                请选择音色
+              </option>
+              {voices.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           背景图片
           <input
@@ -164,7 +203,10 @@ export function SceneEditor({
             {error}
           </p>
         )}
-        <button className="primary-button" disabled={loading || busy}>
+        <button
+          className="primary-button"
+          disabled={loading || busy || (!scene && !form.tts_voice)}
+        >
           {busy ? '正在保存…' : '保存场景'}
         </button>
         {savedId && (

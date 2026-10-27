@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { listScenes, getScene } from '../features/scenes/api'
 import type { Scene } from '../features/scenes/api'
 import { SceneCard } from '../features/scenes/SceneCard'
+import { ApplicationSettingsPanel } from '../features/settings/ApplicationSettingsPanel'
 import { SceneEditor } from '../features/scenes/SceneEditor'
 import { SceneRoom } from '../features/dialogue/SceneRoom'
 import {
@@ -33,6 +34,7 @@ export function HomePage() {
   const [category, setCategory] = useState('')
   const [editing, setEditing] = useState<Scene | 'new' | null>(null)
   const [history, setHistory] = useState(false)
+  const [applicationSettings, setApplicationSettings] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -193,6 +195,13 @@ export function HomePage() {
               Dialogue<span className="brand-light">Lab</span>
             </a>
             <div className="header-actions">
+              <button
+                className="quiet-button"
+                onClick={() => setApplicationSettings(true)}
+              >
+                <Icon name="settings" />
+                应用设置
+              </button>
               <button className="quiet-button" onClick={() => setHistory(true)}>
                 <Icon name="history" />
                 最近练习
@@ -312,6 +321,11 @@ export function HomePage() {
           onClose={() => setEditing(null)}
           onSaved={saved}
           onDeleted={deleted}
+        />
+      )}
+      {applicationSettings && (
+        <ApplicationSettingsPanel
+          onClose={() => setApplicationSettings(false)}
         />
       )}
     </>

@@ -8,12 +8,15 @@ export type Scene = {
   cover: string | null
   background: string | null
   status: 'active' | 'archived'
+  ttsVoice: string | null
+  voiceAvailable: boolean
 }
 export type SceneForm = {
   name: string
   category: string
   character_name: string
   system_prompt: string
+  tts_voice?: string
 }
 
 function parseScene(value: unknown): Scene {
@@ -24,6 +27,8 @@ function parseScene(value: unknown): Scene {
     typeof value.name !== 'string' ||
     typeof value.category !== 'string' ||
     typeof value.character_name !== 'string' ||
+    (value.tts_voice !== null && typeof value.tts_voice !== 'string') ||
+    typeof value.voice_available !== 'boolean' ||
     (value.status !== 'active' && value.status !== 'archived')
   )
     throw new Error('场景资料无效。')
@@ -45,6 +50,8 @@ function parseScene(value: unknown): Scene {
     cover: image('cover_image'),
     background: image('background_image'),
     status: value.status,
+    ttsVoice: value.tts_voice,
+    voiceAvailable: value.voice_available,
   }
 }
 export async function listScenes(signal?: AbortSignal): Promise<Scene[]> {
@@ -65,6 +72,15 @@ export async function saveScene(form: SceneForm, id?: string) {
       method: id ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
+    }),
+  )
+}
+export async function saveSceneVoice(id: string, voice: string) {
+  return parseScene(
+    await requestJson(`/scenes/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts_voice: voice }),
     }),
   )
 }

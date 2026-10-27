@@ -21,11 +21,13 @@ class Scheduler:
         emit,
         options=None,
         synthesis_factory=None,
+        settings_loader=None,
     ):
         self.session_id, self.sessions, self.context = session_id, sessions, context
         self.models, self.model, self.emit = models, model, emit
         self.options, self.synthesis_factory = options, synthesis_factory
         self.options = options or SimpleOptions()
+        self.settings_loader = settings_loader
         self._commands = asyncio.Queue()
         self._worker = None
         self._controller = None
@@ -211,6 +213,7 @@ class Scheduler:
         started = False
         texts = asyncio.Queue()
         try:
+            await self._configure()
             prepared = await self.context.build(self.session_id, request.preset)
             prepared = await self._maybe_compact(request, prepared, controller)
             if controller.signal.aborted:
@@ -307,6 +310,7 @@ class Scheduler:
     async def _manual_compact(self, preset, future):
         await self.emit({"type": "compaction_started"})
         try:
+            await self._configure()
             prepared = await self.context.build(self.session_id, preset)
             changed = await self.context.compact(
                 self.session_id, prepared, replace(self.options, signal=self._controller.signal)
@@ -323,6 +327,19 @@ class Scheduler:
         finally:
             self._commands.put_nowait(("compacted", None, None))
             self._commands.put_nowait(("finished", None, None))
+
+    async def _configure(self):
+        """命令串行调度，上一轮已收尾后才读取并固定本轮配置。"""
+        if self.settings_loader is None:
+            return
+        selected = await self.settings_loader(self.session_id)
+        self.model, self.options = selected.model, selected.options
+        self.context.select_model(selected.model)
+        self.synthesis_factory = selected.synthesis_factory
+        if selected.speech_notice:
+            await self.emit(
+                {"type": "error", "code": "VOICE_UNAVAILABLE", "message": selected.speech_notice}
+            )
 
     async def _output(self, request_id, event):
         if self._active == request_id:

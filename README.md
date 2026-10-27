@@ -78,10 +78,10 @@ Copy-Item .env.example .env
 POSTGRES_PASSWORD=替换为字母和数字组成的数据库密码
 DIALOGUE_LAB_DATABASE_URL=postgresql+asyncpg://dialogue_lab:${POSTGRES_PASSWORD}@127.0.0.1:5432/dialogue_lab
 DEEPSEEK_API_KEY=你的DeepSeek密钥
-DIALOGUE_LAB_STT_API_KEY=你的百炼密钥
+DASHSCOPE_API_KEY=你的百炼密钥
 ```
 
-保留密码行在数据库连接地址行之前。默认 TTS 使用同一份百炼密钥；需要分别配置时，填写 `DIALOGUE_LAB_TTS_API_KEY`。完整配置项见 [.env.example](.env.example)，密钥不要提交到 Git。
+保留密码行在数据库连接地址行之前。百炼语音识别和合成都使用 `DASHSCOPE_API_KEY`。完整配置项见 [.env.example](.env.example)，密钥不要提交到 Git。
 
 ### 4. 初始化数据库
 
@@ -138,13 +138,17 @@ docker compose stop
 
 ## 模型与指令配置
 
-默认对话模型为 DeepSeek 的 `deepseek-flash`。在 `.env` 中设置 `DIALOGUE_LAB_AI_PROVIDER` 和 `DIALOGUE_LAB_AI_MODEL` 可选择其他内置模型；OpenAI 和 Anthropic 分别使用 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`。
+首页“应用设置”选择对话供应商、模型、推理强度，以及语音识别和合成模型。DeepSeek、OpenAI、Anthropic 分别读取 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`。没有配置密钥的供应商会显示为不可选；配置密钥后重启后端。
 
-默认语音识别使用 `qwen-audio-3.1-asr-flash-streaming`，语音合成使用 `qwen-audio-3.1-tts-flash`。模型和音色配置见 [.env.example](.env.example)。修改型号前，应确认语音接入支持该模型及音色。
+首次启动从 `.env` 的模型选项初始化 `data/settings.json`；之后以该文件为准，界面保存无需重启。初始对话模型为 `deepseek-flash`。当前语音接入支持百炼 `qwen-audio-3.1-asr-flash-streaming` 和 `qwen-audio-3.1-tts-flash`，页面只展示已接入的模型。
+
+进入场景后，在“设置 → 人物声音”选择音色，新建场景也需要选择音色。更换全局合成模型前，应用会列出音色不兼容的场景；保存后保留这些场景的原音色，暂停其语音播放，文字交流仍可继续。重新选择兼容音色后恢复语音。对话模型、推理强度、TTS 和音色在下一次回复生效，STT 在下一次开始录音时生效。
+
+升级旧版时先执行 `uv run alembic upgrade head`，迁移会将旧 `DIALOGUE_LAB_TTS_VOICE` 回填到已有场景。旧通用密钥变量不再读取：将旧 AI 密钥移到当前对话供应商变量，将旧百炼 STT/TTS 密钥移到 `DASHSCOPE_API_KEY`。两个旧语音密钥不同的情况下，应明确选定一个可同时使用识别和合成的百炼密钥。
 
 场景身份指令通过界面编辑，保存于 `data/prompts/`；上传图片保存于 `data/images/`。`data/` 不提交 Git，备份时应连同数据库一起保留。通过 `DIALOGUE_LAB_DATA_DIRECTORY` 可以指定数据目录。内置场景由数据库迁移初始化一次，不会覆盖用户修改。
 
-没有场景归属的旧会话继续使用 [prompts/](prompts/) 下的系统指令。环境配置变更后需要重启后端，指令正文变更不需要。
+没有场景归属的旧会话继续使用 [prompts/](prompts/) 下的系统指令，以及 `DIALOGUE_LAB_TTS_VOICE` 指定的原音色。场景会话不使用这个音色配置。环境配置变更后需要重启后端，指令正文变更不需要。
 
 ## 项目目录
 
@@ -155,6 +159,7 @@ src/dialogue_lab/
   scenes/                 场景资料与图片管理
   resources/              内置场景身份文档和图片
   sessions/               会话管理
+  settings/               全局模型设置与可选目录
   context/                上下文管理
   runtime/                调度与模型调用
   voice/                  语音识别与合成接入
@@ -164,7 +169,7 @@ src/dialogue_lab/
   main.py                 FastAPI 入口
 packages/ai/              独立 AI 包
 prompts/                  旧独立会话的系统指令文档
-data/                     用户身份文档和图片，不提交 Git
+data/                     应用设置、用户身份文档和图片，不提交 Git
 migrations/               数据库迁移
 tests/                    应用测试
 compose.yaml              本地 Docker 服务

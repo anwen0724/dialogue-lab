@@ -4,7 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from ai import AuthContext, ModelAuth, Models, SimpleOptions
+from ai import AuthContext, Models, SimpleOptions
 from ai.providers.anthropic import create_anthropic_provider
 from ai.providers.deepseek import create_deepseek_provider
 from ai.providers.openai import create_openai_provider
@@ -13,12 +13,15 @@ from dotenv import dotenv_values
 from dialogue_lab.context.manager import ContextManager
 from dialogue_lab.context.system_prompt import SystemPrompts
 from dialogue_lab.runtime.scheduler import Scheduler
+from dialogue_lab.runtime.settings import ReplySettings
 from dialogue_lab.scenes.service import SceneService
 from dialogue_lab.sessions.service import SessionService
+from dialogue_lab.settings.service import SettingsService
 from dialogue_lab.storage.compaction_store import CompactionStore
 from dialogue_lab.storage.database import Database
 from dialogue_lab.storage.scene_store import SceneStore
 from dialogue_lab.storage.session_store import SessionStore
+from dialogue_lab.voice.catalog import get_speech_model
 from dialogue_lab.voice.synthesis import Synthesis
 
 
@@ -45,12 +48,18 @@ class Services:
             create_anthropic_provider,
         ):
             self.models.set_provider(factory(), owns_provider=True)
+        self.application_settings = SettingsService(settings, self.models, environment)
         self.prompts = SystemPrompts(
             settings.prompts_directory,
             Path(__file__).parent / "resources" / "prompts",
             settings.data_directory / "prompts",
         )
-        self.scenes = SceneService(SceneStore(self.database), self.prompts, settings.data_directory)
+        self.scenes = SceneService(
+            SceneStore(self.database),
+            self.prompts,
+            settings.data_directory,
+            self.application_settings,
+        )
         self.controllers = {}
         self._recovery_lock = asyncio.Lock()
         self._recovered = False
@@ -63,17 +72,10 @@ class Services:
                 self._recovered = True
         if session_id in self.controllers:
             return None
-        model = self.models.get_model(self.settings.ai_provider, self.settings.ai_model)
+        selected = self.application_settings.current.dialogue
+        model = self.models.get_model(selected.provider_id, selected.model_id)
         if model is None:
             raise ValueError("配置的 AI 模型不在供应商目录中。")
-        options = SimpleOptions(
-            reasoning=self.settings.ai_reasoning,
-            max_output_tokens=self.settings.ai_max_output_tokens,
-            timeout=120,
-            auth=ModelAuth(api_key=self.settings.ai_api_key.get_secret_value())
-            if self.settings.ai_api_key.get_secret_value()
-            else None,
-        )
         context = ContextManager(
             self.sessions,
             self.models,
@@ -89,16 +91,49 @@ class Services:
             self.models,
             model,
             emit,
-            options=options,
-            synthesis_factory=lambda: Synthesis(
-                api_key=self.settings.tts_api_key.get_secret_value()
-                or self.settings.stt_api_key.get_secret_value(),
-                model=self.settings.tts_model,
-                voice=self.settings.tts_voice,
-            ),
+            settings_loader=self.reply_settings,
         )
         self.controllers[session_id] = scheduler
         return scheduler
+
+    async def reply_settings(self, session_id):
+        """读取全局选择及场景音色；闭包只捕获本轮确定的值。"""
+        selection = self.application_settings.current
+        model = self.models.get_model(selection.dialogue.provider_id, selection.dialogue.model_id)
+        options = SimpleOptions(
+            reasoning=selection.dialogue.reasoning,
+            max_output_tokens=min(
+                self.settings.ai_max_output_tokens,
+                model.max_output_tokens or self.settings.ai_max_output_tokens,
+            ),
+            timeout=120,
+        )
+        speech = get_speech_model("tts", selection.tts)
+        scene = await self.scenes.store.find_for_session(session_id)
+        # 无场景的旧会话保留原配置；场景音色为空时不能借用该值。
+        voice = scene["tts_voice"] if scene is not None else self.settings.tts_voice
+        key = self.application_settings.environment.get(speech.credential_env, "")
+        if voice not in dict(speech.voices):
+            notice = (
+                "请在场景设置中重新选择人物声音，文字交流仍可继续。"
+                if scene is not None
+                else "旧会话的音色与当前合成模型不兼容，请修改原音色配置。文字交流仍可继续。"
+            )
+            return ReplySettings(model, options, None, notice)
+        if not key:
+            return ReplySettings(
+                model, options, None, f"请配置 {speech.credential_env}，文字交流仍可继续。"
+            )
+        return ReplySettings(
+            model,
+            options,
+            lambda: Synthesis(
+                provider=speech.provider_id,
+                api_key=key,
+                model=speech.model_id,
+                voice=voice,
+            ),
+        )
 
     async def release(self, session_id, scheduler):
         if scheduler is not None and self.controllers.get(session_id) is scheduler:

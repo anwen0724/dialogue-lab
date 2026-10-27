@@ -20,8 +20,8 @@ class VoiceInputError(Exception):
 class Recognition:
     """每个输入连接独占识别资源；正常结束排空，退出时取消剩余任务。"""
 
-    def __init__(self, *, api_key: str, model: str):
-        self._config = speechio.RemoteModelConfig(provider="bailian", model=model, api_key=api_key)
+    def __init__(self, *, api_key: str, model: str, provider: str = "bailian"):
+        self._config = speechio.RemoteModelConfig(provider=provider, model=model, api_key=api_key)
         self._runtime = None
         self._session = None
         self._finish_deadline: float | None = None

@@ -39,6 +39,7 @@ scenes = Table(
     Column("name", Text, nullable=False),
     Column("category", Text, nullable=False),
     Column("character_name", Text, nullable=False),
+    Column("tts_voice", Text),
     Column("cover_image", Text),
     Column("background_image", Text),
     Column("prompt_key", Text, nullable=False, unique=True),

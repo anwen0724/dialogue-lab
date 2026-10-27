@@ -8,7 +8,6 @@ import speechio
 from conftest import TEST_DATABASE_URL
 from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from speechio_boundary import SpeechRuntime
 
 from dialogue_lab.main import create_app
@@ -19,7 +18,7 @@ pytestmark = pytest.mark.usefixtures("database")
 @pytest.fixture
 def speech(monkeypatch):
     runtime = SpeechRuntime()
-    monkeypatch.setenv("DIALOGUE_LAB_STT_API_KEY", "test-credential")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-credential")
     monkeypatch.setattr(speechio, "STTRuntime", lambda *args, **kwargs: runtime)
     return runtime
 
@@ -43,12 +42,13 @@ def recording(client):
         yield socket
 
 
-def test_missing_key_reports_configuration_error(monkeypatch, client):
-    client.app.state.services.settings.stt_api_key = SecretStr("")
-    with recording(client) as socket:
-        assert socket.receive_json()["code"] == "STT_NOT_CONFIGURED"
-        assert socket.receive_json()["type"] == "recording_stopped"
-    assert client.get("/api/health").status_code == 200
+def test_missing_key_reports_configuration_error(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "")
+    with TestClient(create_app()) as client:
+        with recording(client) as socket:
+            assert socket.receive_json()["code"] == "STT_NOT_CONFIGURED"
+            assert socket.receive_json()["type"] == "recording_stopped"
+        assert client.get("/api/health").status_code == 200
 
 
 def test_disconnect_releases_recognition_resources(speech, client):
@@ -82,13 +82,14 @@ def test_recognition_failure_reports_safe_error_and_closes(speech, client):
         assert speech.closed.is_set()
 
 
-def test_real_speechio_can_start_and_end_silent_input(monkeypatch, client):
-    client.app.state.services.settings.stt_api_key = SecretStr("test-credential")
-    with recording(client) as socket:
-        assert socket.receive_json()["type"] == "recording_ready"
-        socket.send_bytes(b"\0\0" * 3200)
-        socket.send_json({"type": "stop_recording"})
-        assert socket.receive_json()["type"] == "recording_stopped"
+def test_real_speechio_can_start_and_end_silent_input(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-credential")
+    with TestClient(create_app()) as client:
+        with recording(client) as socket:
+            assert socket.receive_json()["type"] == "recording_ready"
+            socket.send_bytes(b"\0\0" * 3200)
+            socket.send_json({"type": "stop_recording"})
+            assert socket.receive_json()["type"] == "recording_stopped"
 
 
 def test_other_websites_cannot_open_local_voice_service(client):

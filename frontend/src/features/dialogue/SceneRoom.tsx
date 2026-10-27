@@ -199,6 +199,17 @@ export function SceneRoom({
           </>
         )}
       </section>
+      {scene && !scene.voiceAvailable && (
+        <div className="voice-notice" role="status">
+          当前音色不可用，语音播放已暂停。
+          <button
+            className="quiet-button"
+            onClick={() => openPanel('settings')}
+          >
+            选择人物声音
+          </button>
+        </div>
+      )}
       {!controls && (
         <button
           className="reveal-controls"

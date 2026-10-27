@@ -8,6 +8,24 @@ from dialogue_lab.main import create_app
 
 
 @pytest.mark.usefixtures("database")
+def test_scene_voice_is_validated_and_saved_independently(monkeypatch, tmp_path):
+    monkeypatch.setenv("DIALOGUE_LAB_DATA_DIRECTORY", str(tmp_path))
+    with TestClient(create_app()) as client:
+        scenes = client.get("/api/scenes").json()
+        first, second = scenes[:2]
+        assert "tts_voice" in first
+        endpoint = f"/api/scenes/{first['scene_id']}"
+        assert client.patch(endpoint, json={"tts_voice": "Emily_v3.1"}).status_code == 200
+        assert client.get(endpoint).json()["tts_voice"] == "Emily_v3.1"
+        assert (
+            client.get(f"/api/scenes/{second['scene_id']}").json()["tts_voice"]
+            == second["tts_voice"]
+        )
+        assert client.patch(endpoint, json={"tts_voice": "unknown"}).status_code == 422
+        assert client.get(endpoint).json()["tts_voice"] == "Emily_v3.1"
+
+
+@pytest.mark.usefixtures("database")
 def test_user_can_create_edit_and_reopen_scene(monkeypatch, tmp_path):
     monkeypatch.setenv("DIALOGUE_LAB_DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("DIALOGUE_LAB_DATA_DIRECTORY", str(tmp_path))
@@ -18,6 +36,7 @@ def test_user_can_create_edit_and_reopen_scene(monkeypatch, tmp_path):
                 "name": "我的咖啡馆",
                 "category": "英语",
                 "character_name": "Emma",
+                "tts_voice": "longanhuan_v3.1",
                 "system_prompt": "你是 Emma，使用英语自然交流。",
             },
         )
@@ -51,6 +70,7 @@ def test_scene_sessions_are_filtered_and_scene_with_history_is_archived(monkeypa
                 "name": "Practice",
                 "category": "English",
                 "character_name": "Emma",
+                "tts_voice": "longanhuan_v3.1",
                 "system_prompt": "Be brief.",
             },
         ).json()
@@ -90,6 +110,7 @@ def test_uploaded_background_is_saved_and_invalid_image_preserves_it(monkeypatch
                 "name": "Test",
                 "category": "Test",
                 "character_name": "Test",
+                "tts_voice": "longanhuan_v3.1",
                 "system_prompt": "Be brief.",
             },
         ).json()

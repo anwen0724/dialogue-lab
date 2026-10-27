@@ -18,7 +18,46 @@ from dialogue_lab.context.compaction import (
 from dialogue_lab.context.manager import ContextManager
 from dialogue_lab.context.messages import CompactionSummary, convert_to_llm
 from dialogue_lab.context.system_prompt import SystemPrompts
+from dialogue_lab.sessions.types import SessionError
 from dialogue_lab.storage.compaction_store import CompactionStore
+
+
+@pytest.mark.asyncio
+async def test_switch_to_smaller_model_recalculates_budget_without_dropping_messages(
+    session_service, tmp_path
+):
+    (tmp_path / "default.md").write_text("Be brief.", encoding="utf-8")
+    models, model = make_models(ScriptedAdapter([]))
+    sid = int((await session_service.create("Switch budget"))["session_id"])
+    request_id = uuid4()
+    await session_service.submit(sid, request_id, "x" * 400)
+    manager = ContextManager(
+        session_service,
+        models,
+        model,
+        SystemPrompts(tmp_path),
+        settings=CompactionSettings(reserve_tokens=10, keep_recent_tokens=20),
+    )
+    try:
+        first = await manager.build(sid, "default")
+        await session_service.save_assistant(
+            sid,
+            request_id,
+            AssistantMessage(
+                "test", "dialogue", "test", content=[TextContent("Hello")], usage=Usage(total=1)
+            ),
+        )
+        manager.remember_usage(sid, first)
+        assert not manager.needs_compaction(await manager.build(sid, "default"))
+        manager.select_model(replace(model, id="small", context_window=80))
+        prepared = await manager.build(sid, "default")
+        assert manager.needs_compaction(prepared)
+        with pytest.raises(SessionError):
+            await manager.to_context(prepared, max_output_tokens=10)
+        assert len((await session_service.open(sid))["messages"]) == 2
+        assert prepared.messages[0].content == [TextContent("x" * 400)]
+    finally:
+        await models.aclose()
 
 
 def test_prompt_document_changes_apply_to_next_load(tmp_path):

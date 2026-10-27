@@ -5,8 +5,8 @@ import speechio
 
 
 class Synthesis:
-    def __init__(self, *, api_key: str, model: str, voice: str):
-        self._config = speechio.RemoteModelConfig(provider="bailian", model=model, api_key=api_key)
+    def __init__(self, *, api_key: str, model: str, voice: str, provider: str = "bailian"):
+        self._config = speechio.RemoteModelConfig(provider=provider, model=model, api_key=api_key)
         self._voice = voice
         self._synthesizer = None
         self._stream = None

@@ -1,5 +1,8 @@
 """从会话 WebSocket 验证接入、持久化及控制权。"""
 
+import asyncio
+from threading import Event
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -14,6 +17,84 @@ from speechio_boundary import SpeechRuntime
 from dialogue_lab.main import create_app
 
 pytestmark = pytest.mark.usefixtures("database")
+
+
+def test_existing_connection_uses_saved_model_and_voice_on_next_reply(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "speech-test")
+    application = create_app()
+    with TestClient(application) as client:
+        models = application.state.services.models
+        available = models.get_models("deepseek")
+        release = Event()
+        started = Event()
+
+        class PausedAdapter(ScriptedAdapter):
+            async def stream_simple(self, model, context, auth, options):
+                async for event in super().stream_simple(model, context, auth, options):
+                    if len(self.inputs) == 1 and event.type == "text_delta":
+                        started.set()
+                        if not await asyncio.to_thread(release.wait, 5):
+                            raise RuntimeError("Test did not release first reply")
+                    yield event
+
+        adapter = PausedAdapter([["First"], ["Second"]])
+        models.set_provider(
+            create_provider(
+                "deepseek",
+                models=available,
+                auth=ApiKeyAuth(keyless=True),
+                adapters={available[0].api: adapter},
+            ),
+            owns_provider=True,
+        )
+        synthesis_requests = []
+        voices = []
+
+        class Synthesizer:
+            def __init__(self, config):
+                synthesis_requests.append(config)
+
+            def open_stream(self, *, options):
+                voices.append(options.voice)
+                raise RuntimeError("External speech boundary")
+
+            def close(self):
+                return SimpleNamespace(status="ok")
+
+        monkeypatch.setattr(speechio, "Synthesizer", Synthesizer)
+        scene_id = client.get("/api/scenes").json()[0]["scene_id"]
+        client.patch(f"/api/scenes/{scene_id}", json={"tts_voice": "longanhuan_v3.1"})
+        sid = client.post("/api/sessions", json={"title": "Switch", "scene_id": scene_id}).json()[
+            "session_id"
+        ]
+        with client.websocket_connect(f"/api/sessions/{sid}/realtime") as socket:
+            socket.receive_json()
+            for index in range(2):
+                socket.send_json(
+                    {"type": "submit", "request_id": str(uuid4()), "text": f"Turn {index}"}
+                )
+                if index == 0:
+                    try:
+                        assert started.wait(3)
+                        settings = client.get("/api/settings").json()
+                        settings["dialogue"]["model_id"] = "deepseek-v4-pro"
+                        settings["dialogue"]["reasoning"] = "high"
+                        assert client.patch("/api/settings", json=settings).status_code == 200
+                        assert (
+                            client.patch(
+                                f"/api/scenes/{scene_id}", json={"tts_voice": "Emily_v3.1"}
+                            ).status_code
+                            == 200
+                        )
+                    finally:
+                        release.set()
+                seen = set()
+                while not {"generation_finished", "audio_finished"}.issubset(seen):
+                    seen.add(socket.receive_json()["type"])
+        assert [call[0].id for call in adapter.calls] == ["deepseek-flash", "deepseek-v4-pro"]
+        assert adapter.calls[1][2].reasoning == "high"
+        assert synthesis_requests[1].api_key == "speech-test"
+        assert voices == ["longanhuan_v3.1", "Emily_v3.1"]
 
 
 def install_provider(application, monkeypatch, replies=None):
@@ -93,9 +174,15 @@ def test_recording_tail_is_submitted_once_before_recording_stops(monkeypatch):
         "DIALOGUE_LAB_DATABASE_URL",
         TEST_DATABASE_URL,
     )
-    monkeypatch.setenv("DIALOGUE_LAB_STT_API_KEY", "test")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test")
     speech = SpeechRuntime()
-    monkeypatch.setattr(speechio, "STTRuntime", lambda *args, **kwargs: speech)
+    credentials_match = []
+
+    def create_recognition(config, **kwargs):
+        credentials_match.append(config.api_key == "test")
+        return speech
+
+    monkeypatch.setattr(speechio, "STTRuntime", create_recognition)
     application = create_app()
     with TestClient(application) as client:
         adapter = install_provider(application, monkeypatch)
@@ -120,6 +207,7 @@ def test_recording_tail_is_submitted_once_before_recording_stops(monkeypatch):
         assert saved[0]["message_json"]["source"] == "voice"
         assert len(adapter.inputs) == 1
         assert speech.closed.is_set()
+    assert credentials_match == [True]
 
 
 def test_scene_identity_update_applies_to_next_turn_and_title_uses_real_input(
@@ -138,6 +226,7 @@ def test_scene_identity_update_applies_to_next_turn_and_title_uses_real_input(
                 "name": "Cafe",
                 "category": "English",
                 "character_name": "Emma",
+                "tts_voice": "longanhuan_v3.1",
                 "system_prompt": "You are Emma, a coffee lover.",
             },
         ).json()
@@ -177,6 +266,7 @@ def test_character_rename_updates_model_prompt_without_rewriting_document(monkey
                 "name": "Cafe",
                 "category": "English",
                 "character_name": "Emma",
+                "tts_voice": "longanhuan_v3.1",
                 "system_prompt": template,
             },
         ).json()

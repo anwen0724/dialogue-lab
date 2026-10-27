@@ -59,6 +59,12 @@ class ContextManager:
         # 只保存用于判断用量是否仍有效的摘要；不缓存或持久化指令正文。
         self._usage_system = {}
 
+    def select_model(self, model):
+        """运行时仅在操作开始时切换模型；旧模型的用量不能用于新模型预算。"""
+        if model != self.model:
+            self._usage_system.clear()
+            self.model = model
+
     async def build(self, session_id: int, preset: str) -> PreparedContext:
         """读取当前文档和有效路径；此时不执行请求级消息调整。"""
         system = await asyncio.to_thread(self.prompts.load, preset)
