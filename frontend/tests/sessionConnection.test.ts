@@ -4,6 +4,123 @@ import { SessionConnection } from '../src/features/dialogue/sessionConnection'
 import { BrowserSocket, installBrowserAudio } from './browserAudio'
 afterEach(() => vi.unstubAllGlobals())
 
+test('已到达的字时间允许提前播放；缺失尾部时间不丢音频，实际播完才确认结束', async () => {
+  const { sources } = installBrowserAudio()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.endsWith('/presets')
+              ? ['general']
+              : {
+                  session_id: '1',
+                  title: 'Test',
+                  status: 'active',
+                  messages: [],
+                },
+          ),
+        ),
+    ),
+  )
+  const connection = new SessionConnection('1')
+  connection.connect()
+  await vi.waitFor(() => expect(BrowserSocket.instances).toHaveLength(1))
+  const socket = BrowserSocket.instances[0]
+  socket.deliver({ type: 'connected', can_control: true, messages: [] })
+  await connection.startSession()
+  const requestId = '11111111-1111-4111-8111-111111111111'
+  socket.deliver({ type: 'reply_started', request_id: requestId })
+  socket.deliver({
+    type: 'audio_format',
+    request_id: requestId,
+    sample_rate: 24000,
+    channels: 1,
+    encoding: 'pcm_s16le',
+  })
+  const packet = new ArrayBuffer(16 + 48000)
+  const bytes = requestId.replaceAll('-', '').match(/../g) ?? []
+  new Uint8Array(packet, 0, 16).set(bytes.map((byte) => parseInt(byte, 16)))
+  const timing = {
+    type: 'text_timing',
+    request_id: requestId,
+    segment_index: 0,
+    text: '你好。',
+    start_seconds: 0,
+    end_seconds: null,
+    words: null,
+  }
+  socket.deliver(timing)
+  socket.onmessage?.({ data: packet })
+  expect(sources).toHaveLength(0)
+  socket.deliver({
+    ...timing,
+    words: [{ text: '你好', start_seconds: 0, end_seconds: 1 }],
+  })
+  expect(sources).toHaveLength(1)
+  socket.onmessage?.({ data: packet })
+  socket.deliver({ type: 'audio_finished', request_id: requestId })
+  expect(sources).toHaveLength(2)
+  const finished = () =>
+    socket.sent.filter(
+      (item) => JSON.parse(String(item)).type === 'playback_finished',
+    )
+  expect(finished()).toHaveLength(0)
+  sources.forEach((source) => source.onended?.())
+  expect(finished()).toHaveLength(1)
+  connection.dispose()
+})
+
+test('合成时间按段更新，生成结束不结束字幕，停止后拒绝迟到字幕', async () => {
+  installBrowserAudio()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.endsWith('/presets')
+              ? ['general']
+              : {
+                  session_id: '1',
+                  title: 'Test',
+                  status: 'active',
+                  messages: [],
+                },
+          ),
+        ),
+    ),
+  )
+  const connection = new SessionConnection('1')
+  connection.connect()
+  await vi.waitFor(() => expect(BrowserSocket.instances).toHaveLength(1))
+  const socket = BrowserSocket.instances[0]
+  socket.deliver({ type: 'connected', can_control: true, messages: [] })
+  socket.deliver({ type: 'reply_started', request_id: 'reply' })
+  const timing = {
+    type: 'text_timing',
+    request_id: 'reply',
+    segment_index: 0,
+    text: '你好。',
+    start_seconds: 0,
+    end_seconds: null,
+    words: null,
+  }
+  socket.deliver(timing)
+  socket.deliver({ ...timing, end_seconds: 1 })
+  socket.deliver({ type: 'generation_finished', request_id: 'reply' })
+  expect(connection.getSnapshot().speech?.timings).toEqual([
+    { index: 0, text: '你好。', start: 0, end: 1, words: null },
+  ])
+  expect(connection.getSnapshot().speech?.status).not.toBe('finished')
+  connection.stopReply()
+  socket.deliver({ ...timing, segment_index: 1, text: '旧字幕' })
+  expect(connection.getSnapshot().speech?.status).toBe('stopped')
+  expect(connection.getSnapshot().speech?.timings).toHaveLength(1)
+  connection.dispose()
+})
+
 test('回复期间暂停收音，结束后仅在用户仍开启麦克风时恢复', async () => {
   const { getUserMedia, track } = installBrowserAudio()
   vi.stubGlobal(

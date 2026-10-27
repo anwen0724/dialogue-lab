@@ -8,6 +8,7 @@ import { Icon } from '../../shared/ui/Icon'
 import { useDialogue } from './useDialogue'
 import { MessageComposer } from './MessageComposer'
 import { VoiceWave } from './VoiceWave'
+import { DialogueSubtitles } from './DialogueSubtitles'
 import { RoomSettings } from './RoomSettings'
 import { SceneEditor } from '../scenes/SceneEditor'
 import { loadPreferences, savePreferences } from './preferences'
@@ -191,12 +192,15 @@ export function SceneRoom({
       <section className="subtitle-area" aria-live="polite" aria-atomic="true">
         <VoiceWave readAmplitude={connection.getAmplitude} />
         {subtitles && (
-          <>
-            <span className="latest-author">
-              {latestText ? latestAuthor : ''}
-            </span>
-            <p className="subtitle latest-message-text">{latestText}</p>
-          </>
+          <DialogueSubtitles
+            speech={state.speech}
+            partial={state.partial}
+            fallbackText={latestText}
+            author={
+              state.speech ? (scene?.characterName ?? 'AI') : latestAuthor
+            }
+            readPosition={connection.getPlaybackPosition}
+          />
         )}
       </section>
       {scene && !scene.voiceAvailable && (

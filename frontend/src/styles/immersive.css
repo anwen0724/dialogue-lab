@@ -532,7 +532,7 @@ h1 {
   filter: blur(12px);
   opacity: 0;
 }
-.subtitle-area:has(.subtitle:not(:empty))::before {
+.subtitle-area:has(.latest-message-text:not(:empty))::before {
   opacity: 1;
 }
 
@@ -582,14 +582,27 @@ h1 {
   font-weight: 400;
   margin: 0;
   text-wrap: balance;
-  white-space: normal;
+  white-space: pre-line;
   overflow-wrap: anywhere;
-  /* 时间同步接入前只展示两行预览；全文仍由消息面板承载。 */
+  /* 字幕按实际字体宽度分页；区域固定两行，切页不推动波形和输入区。 */
   height: 3.2em;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  transition: opacity 0.3s ease;
+}
+.subtitle-measurer {
+  position: absolute;
+  visibility: hidden;
+  width: max-content;
+  height: auto;
+  display: block;
+  white-space: pre;
+  pointer-events: none;
+}
+.subtitle-faded {
+  opacity: 0;
 }
 
 .room-bottom {

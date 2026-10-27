@@ -22,7 +22,7 @@ class Synthesis:
     def _open(self):
         self._synthesizer = speechio.Synthesizer(self._config)
         self._stream = self._synthesizer.open_stream(
-            options=speechio.SynthesisOptions(voice=self._voice)
+            options=speechio.SynthesisOptions(voice=self._voice, text_timestamps="word")
         )
 
     async def send_text(self, text: str):
@@ -31,9 +31,9 @@ class Synthesis:
     async def finish_input(self):
         await anyio.to_thread.run_sync(self._stream.finish_input)
 
-    async def audio(self):
-        """与文本发送并发读取；正常结束须读尽尾部音频。"""
-        iterator = iter(self._stream)
+    async def events(self):
+        """并发读取音频和文字时间；同一句的后续时间事件更新已有信息。"""
+        iterator = self._stream.events()
         sentinel = object()
         while True:
             chunk = await anyio.to_thread.run_sync(next, iterator, sentinel)

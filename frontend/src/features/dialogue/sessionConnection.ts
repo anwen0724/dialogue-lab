@@ -3,6 +3,7 @@ import type { Message } from '../sessions/api'
 import { AudioPlayer } from '../voice-output/audioPlayer'
 import { Microphone } from '../voice-input/microphone'
 import { parseEvent } from './events'
+import type { SpeechCaption } from './subtitles'
 
 type Snapshot = {
   status: 'loading' | 'connecting' | 'connected' | 'disconnected'
@@ -11,6 +12,7 @@ type Snapshot = {
   presets: string[]
   error?: string
   draft?: { requestId: string; text: string }
+  speech?: SpeechCaption
   generating: boolean
   playing: boolean
   compacting: boolean
@@ -43,6 +45,8 @@ export class SessionConnection {
   private generation = 0
   private activeRequest?: string
   private sampleRate?: number
+  private pendingAudio: ArrayBuffer[] = []
+  private releasedDuration = 0
   private suppressOutput = false
   private pending = new Map<
     string,
@@ -142,6 +146,7 @@ export class SessionConnection {
   }
   getAmplitude = (): number =>
     Math.max(this.player.getAmplitude(), this.microphone?.getAmplitude() ?? 0)
+  getPlaybackPosition = (): number | null => this.player.getPosition()
   async startSession(): Promise<void> {
     await this.unlockPlayback()
     if (this.snapshot.canControl)
@@ -167,6 +172,8 @@ export class SessionConnection {
   stopReply(): void {
     this.suppressOutput = true
     this.player.stop()
+    this.pendingAudio = []
+    this.updateSpeech({ status: 'stopped' })
     this.update({ playing: false, generating: false })
     try {
       this.send({ type: 'stop_reply' })
@@ -266,6 +273,15 @@ export class SessionConnection {
   private makePlayer(): AudioPlayer {
     return new AudioPlayer((requestId) => {
       this.update({ playing: false })
+      if (requestId === this.snapshot.speech?.requestId)
+        this.updateSpeech({
+          status:
+            this.snapshot.speech.status === 'text'
+              ? 'text'
+              : this.snapshot.speech.timings.length
+                ? 'finished'
+                : 'text',
+        })
       try {
         this.send({ type: 'playback_finished', request_id: requestId })
       } catch (error: unknown) {
@@ -332,6 +348,7 @@ export class SessionConnection {
               : this.snapshot.draft,
         })
         if (message.role === 'user') {
+          this.update({ speech: undefined })
           this.pending.get(message.requestId)?.resolve()
           this.pending.delete(message.requestId)
         }
@@ -341,10 +358,19 @@ export class SessionConnection {
         if (this.suppressOutput) break
         this.activeRequest = event.requestId
         this.sampleRate = undefined
+        this.pendingAudio = []
+        this.releasedDuration = 0
         this.player.begin(event.requestId)
         this.update({
           generating: true,
           draft: { requestId: event.requestId, text: '' },
+          speech: {
+            requestId: event.requestId,
+            text: '',
+            timings: [],
+            status: 'pending',
+            complete: false,
+          },
         })
         break
       case 'text_delta':
@@ -355,11 +381,16 @@ export class SessionConnection {
               text: (this.snapshot.draft?.text ?? '') + event.text,
             },
           })
+          this.updateSpeech({
+            text: (this.snapshot.speech?.text ?? '') + event.text,
+          })
         }
         break
       case 'generation_finished':
-        if (event.requestId === this.activeRequest)
+        if (!this.suppressOutput && event.requestId === this.activeRequest) {
           this.update({ generating: false })
+          this.updateSpeech({ complete: true })
+        }
         break
       case 'reply_stopped':
         this.suppressOutput = false
@@ -369,6 +400,8 @@ export class SessionConnection {
         ) {
           this.activeRequest = undefined
           this.player.stop()
+          this.pendingAudio = []
+          this.updateSpeech({ status: 'stopped' })
           this.update({ generating: false, playing: false })
         }
         break
@@ -376,7 +409,31 @@ export class SessionConnection {
         if (event.requestId === this.activeRequest)
           this.sampleRate = event.sampleRate
         break
+      case 'text_timing': {
+        if (
+          this.suppressOutput ||
+          event.requestId !== this.activeRequest ||
+          !this.snapshot.speech ||
+          this.snapshot.speech.status === 'text'
+        )
+          break
+        const timings = this.snapshot.speech.timings.filter(
+          (item) => item.index !== event.timing.index,
+        )
+        timings.push(event.timing)
+        timings.sort((a, b) => a.index - b.index)
+        this.updateSpeech({ timings, status: 'audio' })
+        this.releaseAudio()
+        break
+      }
       case 'audio_finished':
+        if (this.suppressOutput || event.requestId !== this.activeRequest) break
+        if (this.pendingAudio.length) {
+          this.updateSpeech({ status: 'text' })
+          this.update({ error: '部分语音缺少字幕时间，字幕改按阅读节奏展示。' })
+          // 缺少时间只影响字幕，不应丢弃已经收到的音频。
+          this.releaseAudio(true)
+        }
         this.player.finish(event.requestId)
         break
       case 'partial':
@@ -410,12 +467,25 @@ export class SessionConnection {
         break
       case 'error':
         this.update({ error: event.message })
+        if (
+          event.requestId === this.activeRequest &&
+          event.code === 'TTS_FAILED'
+        ) {
+          this.player.stop()
+          this.pendingAudio = []
+          this.update({ playing: false })
+          this.updateSpeech({ status: 'text' })
+          // 语音已终止，仍要释放服务端的播放等待。
+          this.send({ type: 'playback_finished', request_id: event.requestId })
+        }
         // 合成失败不终止文字生成，等待模型自己的结束事件。
         if (
           event.requestId === this.activeRequest &&
           event.code !== 'TTS_FAILED'
-        )
+        ) {
           this.update({ generating: false })
+          this.updateSpeech({ complete: true })
+        }
         if (event.requestId) {
           this.pending.get(event.requestId)?.reject(new Error(event.message))
           this.pending.delete(event.requestId)
@@ -430,10 +500,52 @@ export class SessionConnection {
       byte.toString(16).padStart(2, '0'),
     ).join('')
     const requestId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-    if (this.suppressOutput || requestId !== this.activeRequest) return
+    if (
+      this.suppressOutput ||
+      requestId !== this.activeRequest ||
+      this.snapshot.speech?.status === 'text'
+    )
+      return
     if (!this.sampleRate) throw new Error('音频格式尚未声明。')
-    this.player.append(requestId, packet.slice(16), this.sampleRate)
-    this.update({ playing: true })
+    const pcm = packet.slice(16)
+    this.pendingAudio.push(pcm)
+    this.releaseAudio()
+  }
+
+  /** 只排队已有字幕时间覆盖的音频；字时间增量可提前放行，不等待整句结束。 */
+  private releaseAudio(inputFinished = false): void {
+    if (!this.activeRequest || !this.sampleRate) return
+    const end =
+      this.snapshot.speech?.timings.reduce(
+        (last, item) =>
+          Math.max(last, item.end ?? item.words?.at(-1)?.end ?? 0),
+        0,
+      ) ?? 0
+    while (this.pendingAudio.length) {
+      const pcm = this.pendingAudio[0]
+      const next =
+        this.releasedDuration + pcm.byteLength / (2 * this.sampleRate)
+      if (!inputFinished && next > end + 0.000001) break
+      this.pendingAudio.shift()
+      try {
+        this.player.append(this.activeRequest, pcm, this.sampleRate)
+      } catch (error: unknown) {
+        this.pendingAudio = []
+        this.player.stop()
+        this.update({ playing: false })
+        this.updateSpeech({ status: 'text' })
+        this.report(error)
+        this.send({ type: 'playback_finished', request_id: this.activeRequest })
+        return
+      }
+      this.releasedDuration = next
+      this.update({ playing: true })
+    }
+  }
+
+  private updateSpeech(change: Partial<SpeechCaption>): void {
+    if (this.snapshot.speech)
+      this.update({ speech: { ...this.snapshot.speech, ...change } })
   }
 
   private resumeRecording(): void {
@@ -450,6 +562,8 @@ export class SessionConnection {
   }
 
   private releaseDevices(): void {
+    this.pendingAudio = []
+    this.updateSpeech({ status: 'stopped' })
     this.recordingAbort?.abort()
     this.microphone?.dispose()
     this.recordingRequested = false

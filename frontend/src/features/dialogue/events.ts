@@ -1,5 +1,43 @@
 import { isRecord } from '../../shared/api/request'
 import { parseMessage } from '../sessions/api'
+import type { TextTiming, WordTiming } from './subtitles'
+
+function seconds(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+    throw new Error('字幕时间无效。')
+  return value
+}
+
+function parseTiming(value: Record<string, unknown>): TextTiming {
+  if (
+    !Number.isInteger(value.segment_index) ||
+    Number(value.segment_index) < 0 ||
+    typeof value.text !== 'string'
+  )
+    throw new Error('字幕段落无效。')
+  let words: WordTiming[] | null = null
+  if (value.words !== null) {
+    if (!Array.isArray(value.words)) throw new Error('字幕字词时间无效。')
+    words = value.words.map((word) => {
+      if (!isRecord(word) || typeof word.text !== 'string')
+        throw new Error('字幕字词无效。')
+      const start = seconds(word.start_seconds)
+      const end = seconds(word.end_seconds)
+      if (end < start) throw new Error('字幕时间范围无效。')
+      return { text: word.text, start, end }
+    })
+  }
+  const start = seconds(value.start_seconds)
+  const end = value.end_seconds === null ? null : seconds(value.end_seconds)
+  if (end !== null && end < start) throw new Error('字幕时间范围无效。')
+  return {
+    index: Number(value.segment_index),
+    text: value.text,
+    start,
+    end,
+    words,
+  }
+}
 
 /** 只在网络边界解析一次，内部使用可辨识事件类型。 */
 export function parseEvent(value: unknown) {
@@ -13,6 +51,12 @@ export function parseEvent(value: unknown) {
     return value.text
   }
   switch (value.type) {
+    case 'text_timing':
+      return {
+        type: 'text_timing',
+        requestId: requestId(),
+        timing: parseTiming(value),
+      } as const
     case 'connected':
       if (typeof value.can_control !== 'boolean')
         throw new Error('控制状态无效。')

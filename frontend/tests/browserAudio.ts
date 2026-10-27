@@ -53,12 +53,17 @@ export function installBrowserAudio() {
     removeEventListener: vi.fn(),
   }
   const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [track] })
+  const sources: {
+    onended: (() => void) | null
+    start: ReturnType<typeof vi.fn>
+  }[] = []
   vi.stubGlobal('WebSocket', BrowserSocket)
   vi.stubGlobal('AudioWorkletNode', BrowserWorklet)
   vi.stubGlobal(
     'AudioContext',
     class {
       sampleRate = 16000
+      currentTime = 0
       state = 'running'
       destination = {}
       audioWorklet = { addModule: async () => {} }
@@ -76,11 +81,27 @@ export function installBrowserAudio() {
         },
       })
       createMediaStreamSource = () => ({ connect() {}, disconnect() {} })
+      createBuffer = (_channels: number, length: number, rate: number) => ({
+        duration: length / rate,
+        getChannelData: () => new Float32Array(length),
+      })
+      createBufferSource = () => {
+        const source = {
+          buffer: null,
+          onended: null as (() => void) | null,
+          start: vi.fn(),
+          stop() {},
+          connect() {},
+          disconnect() {},
+        }
+        sources.push(source)
+        return source
+      }
     },
   )
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia },
   })
-  return { track, getUserMedia }
+  return { track, getUserMedia, sources }
 }

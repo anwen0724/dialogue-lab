@@ -275,7 +275,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
-    { name = "speechio", specifier = ">=0.2.0,<0.3" },
+    { name = "speechio", specifier = ">=0.3.0,<0.4" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
@@ -1105,7 +1105,7 @@ wheels = [
 
 [[package]]
 name = "speechio"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "av" },
@@ -1121,9 +1121,9 @@ dependencies = [
     { name = "webrtcvad-wheels" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/ed/8b417ff38a250bde36a7343ab8963e4d151e92e56e4a3ca163c13a1a796e/speechio-0.2.0.tar.gz", hash = "sha256:874c5d76ae5edf4ee984a0215a651f318972510c11d495fddea329708da63c51", size = 1448931, upload-time = "2026-10-24T06:36:07.697Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/1f/57674ae66d0484ffa79dbbb371827c8cac5323497bf95e640832eca3ef42/speechio-0.3.0.tar.gz", hash = "sha256:0363105fa31c849b6d1944b150f65c1ca2469f0624a2d71c8ff3168a39110aba", size = 1453245, upload-time = "2026-10-27T15:30:01.258Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/27/798115c533a9197ee15e0e63314df18aa24b27ebd1af5b10bd1d21821056/speechio-0.2.0-py3-none-any.whl", hash = "sha256:c7838978fbc26e8ff5eb657df98c77a1af1ea9ccbfc6cb2aac6e6e7cda056708", size = 1246338, upload-time = "2026-10-24T06:35:52.43Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/37/20dd68034204873aa0833ac9185322d51e004f3236645ca84980df61711d/speechio-0.3.0-py3-none-any.whl", hash = "sha256:4ac8333967b575bf28d3af11aeb228b1ad16ccffcf12c0a80e7fb183b52bc622", size = 1248751, upload-time = "2026-10-27T15:29:53.006Z" },
 ]
 
 [[package]]

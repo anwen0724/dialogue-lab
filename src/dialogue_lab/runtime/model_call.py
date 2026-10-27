@@ -2,8 +2,9 @@
 
 import asyncio
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, replace
 
+import speechio
 from ai import Context
 
 
@@ -39,9 +40,12 @@ async def stream_speech(factory, texts, signal, emit):
 
             async def receive():
                 announced = False
-                async for chunk in synthesis.audio():
+                async for chunk in synthesis.events():
                     if signal.aborted:
                         break
+                    if isinstance(chunk, speechio.TextTiming):
+                        await emit({"type": "text_timing", **asdict(chunk)})
+                        continue
                     if not announced:
                         await emit(
                             {

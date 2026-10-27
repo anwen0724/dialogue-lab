@@ -139,6 +139,14 @@ test('发送文字后显示回复增量，并由保存消息替换临时回复',
       text: 'Hello back',
     })
   })
+  expect(document.querySelector('.latest-message-text')?.textContent).toBe('')
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open')
+  }
+  fireEvent.click(screen.getByRole('button', { name: '打开当前会话消息' }))
   expect(screen.getByText('Hello back')).toBeDefined()
   await act(async () =>
     socket.deliver({
@@ -155,6 +163,7 @@ test('发送文字后显示回复增量，并由保存消息替换临时回复',
     }),
   )
   expect(screen.getAllByText('Hello back')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: '关闭面板' }))
   expect(
     (screen.getByRole('textbox', { name: '输入消息' }) as HTMLTextAreaElement)
       .value,

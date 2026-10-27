@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { AudioPlayer } from '../src/features/voice-output/audioPlayer'
 
 class AudioDevice {
+  static clock = 1
   static sources: {
     start: ReturnType<typeof vi.fn>
     stop: ReturnType<typeof vi.fn>
@@ -23,7 +24,9 @@ class AudioDevice {
       },
     }
   }
-  currentTime = 1
+  get currentTime() {
+    return AudioDevice.clock
+  }
   state = 'running'
   destination = {}
   async resume() {}
@@ -50,6 +53,25 @@ class AudioDevice {
 afterEach(() => {
   vi.unstubAllGlobals()
   AudioDevice.sources = []
+  AudioDevice.clock = 1
+})
+
+test('字幕时钟跟随已播放的采样，网络断档不提前推进，停止后清空', async () => {
+  vi.stubGlobal('AudioContext', AudioDevice)
+  const player = new AudioPlayer(() => {})
+  await player.unlock()
+  player.begin('reply')
+  player.append('reply', new ArrayBuffer(48000), 24000)
+  expect(player.getPosition()).toBeNull()
+  AudioDevice.clock = 1.52
+  expect(player.getPosition()).toBeCloseTo(0.5)
+  AudioDevice.clock = 4
+  expect(player.getPosition()).toBeCloseTo(1)
+  player.append('reply', new ArrayBuffer(48000), 24000)
+  AudioDevice.clock = 4.52
+  expect(player.getPosition()).toBeCloseTo(1.5)
+  player.stop()
+  expect(player.getPosition()).toBeNull()
 })
 
 test('网络结束后仍等待已排队音频播放完毕', async () => {

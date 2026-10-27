@@ -9,6 +9,8 @@ export class AudioPlayer {
   private sources = new Set<AudioBufferSourceNode>()
   private nextTime = 0
   private inputFinished = false
+  private scheduled: { start: number; duration: number; offset: number }[] = []
+  private duration = 0
   constructor(private onFinished: (requestId: string) => void) {}
 
   /** 在点击发送或开始录音时调用，取得浏览器播放许可。 */
@@ -35,6 +37,23 @@ export class AudioPlayer {
     return Math.sqrt(
       this.samples.reduce((sum, value) => sum + value * value, 0) /
         this.samples.length,
+    )
+  }
+  /** 返回已经实际播放的音频位置；尚未开始或已取消时为空。 */
+  getPosition(): number | null {
+    if (!this.context || !this.requestId || !this.scheduled.length) return null
+    const now = this.context.currentTime
+    if (now < this.scheduled[0].start) return null
+    // 已播完的块不再参与查找；网络断档期间停在上一块末尾。
+    while (this.scheduled.length > 1 && now >= this.scheduled[1].start)
+      this.scheduled.shift()
+    const block = this.scheduled[0]
+    return (
+      block.offset +
+      Math.min(
+        Math.max(0, block.duration - 0.000001),
+        Math.max(0, now - block.start),
+      )
     )
   }
   begin(requestId: string): void {
@@ -64,6 +83,12 @@ export class AudioPlayer {
       this.notifyFinished()
     }
     const start = Math.max(this.nextTime, this.context.currentTime + 0.02)
+    this.scheduled.push({
+      start,
+      duration: buffer.duration,
+      offset: this.duration,
+    })
+    this.duration += buffer.duration
     source.start(start)
     this.nextTime = start + buffer.duration
   }
@@ -82,6 +107,8 @@ export class AudioPlayer {
     }
     this.sources.clear()
     this.nextTime = 0
+    this.scheduled = []
+    this.duration = 0
   }
   async dispose(): Promise<void> {
     this.stop()
