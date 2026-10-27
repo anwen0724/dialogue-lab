@@ -1514,10 +1514,22 @@ input[type="range"] {
   padding: 12px;
   width: 100%;
 }
-.scene-form select {
+.scene-form select,
+.legacy-preset {
   color-scheme: dark;
   font: inherit;
   min-width: 0;
+  background-color: #28302d;
+}
+/* 原生弹出菜单需要不透明底色，避免浅色系统菜单沿用表单的浅色文字。 */
+.scene-form select option,
+.legacy-preset option {
+  background-color: #28302d;
+  color: #efefeb;
+}
+.scene-form select option:disabled,
+.legacy-preset option:disabled {
+  color: #adb5af;
 }
 .model-settings .setting-section {
   display: flex;
