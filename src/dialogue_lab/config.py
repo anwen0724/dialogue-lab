@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Dialogue Lab"
+    backend_port: int = Field(default=8000, ge=1, le=65535)
+    frontend_port: int = Field(default=5173, ge=1, le=65535)
     database_url: SecretStr = SecretStr(
         "postgresql+asyncpg://dialogue:dialogue@127.0.0.1:5432/dialogue_lab"
     )

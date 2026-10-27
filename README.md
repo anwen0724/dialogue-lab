@@ -107,6 +107,15 @@ uv run dialogue-lab dev
 
 打开 <http://127.0.0.1:5173>。后端接口文档位于 <http://127.0.0.1:8000/docs>。
 
+默认后端端口为 `8000`，前端为 `5173`。需要修改时，在根目录 `.env` 中设置，例如：
+
+```dotenv
+DIALOGUE_LAB_BACKEND_PORT=8080
+DIALOGUE_LAB_FRONTEND_PORT=3000
+```
+
+停止前后端后重新执行 `uv run dialogue-lab dev`，访问 `http://127.0.0.1:3000`。前端 API 和 WebSocket 转发自动使用后端新端口。单独执行 `npm run dev` 同样读取根目录 `.env`；直接使用 Uvicorn 命令时，通过 `--port` 指定相同的后端端口。系统环境变量优先于 `.env`。
+
 ### 日常启动与停止
 
 完成首次准备后，日常启动 Docker Desktop，再执行 `uv run dialogue-lab dev` 即可。

@@ -30,7 +30,8 @@ def run_development(root: Path) -> None:
     node = shutil.which("node")
     if node is None:
         raise StartupError("找不到 Node.js，请安装 README 中要求的 Node.js 版本。")
-    for port in (8000, 5173):
+    settings = Settings()
+    for port in (settings.backend_port, settings.frontend_port):
         check_port_available(port)
 
     print("[dev] 启动数据库…", flush=True)
@@ -43,12 +44,14 @@ def run_development(root: Path) -> None:
             "数据库启动失败，请确认 Docker Desktop 已启动，并检查上方日志。"
         ) from None
     print("[dev] 检查数据库版本（只读，不执行迁移）…", flush=True)
-    asyncio.run(check_database_version(root, Settings().database_url.get_secret_value()))
+    asyncio.run(check_database_version(root, settings.database_url.get_secret_value()))
 
     # 不创建新终端或独立进程组，前后端都直接接收当前终端的 Ctrl+C。
     with subprocess.Popen([node, str(vite), "--clearScreen", "false"], cwd=frontend) as process:
         try:
-            uvicorn.run("dialogue_lab.main:app", host="127.0.0.1", port=8000, reload=True)
+            uvicorn.run(
+                "dialogue_lab.main:app", host="127.0.0.1", port=settings.backend_port, reload=True
+            )
         finally:
             # 正常 Ctrl+C 已通知 Vite；后端单独失败时也结束本次前端进程。
             try:

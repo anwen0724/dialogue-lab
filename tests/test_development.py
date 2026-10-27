@@ -20,6 +20,22 @@ from dialogue_lab.development import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("setting", ["DIALOGUE_LAB_BACKEND_PORT", "DIALOGUE_LAB_FRONTEND_PORT"])
+def test_configured_port_is_checked_before_starting_services(monkeypatch, setting):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        monkeypatch.setenv(setting, str(port))
+
+        def unexpected_start(*args, **kwargs):
+            raise AssertionError("占用的配置端口应在启动任何服务前被拒绝")
+
+        monkeypatch.setattr(subprocess, "run", unexpected_start)
+        with pytest.raises(StartupError, match=str(port)):
+            run_development(ROOT)
+
+
 def test_unavailable_docker_stops_startup_with_actionable_message(monkeypatch):
     def unavailable(command, **kwargs):
         raise subprocess.CalledProcessError(1, command)
