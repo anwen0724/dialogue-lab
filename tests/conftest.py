@@ -11,14 +11,13 @@ from alembic.config import Config
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
-from dialogue_lab.config import Settings
 from dialogue_lab.sessions.service import SessionService
 from dialogue_lab.storage.database import Database
 from dialogue_lab.storage.session_store import SessionStore
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    Settings().database_url.get_secret_value(),
+    "postgresql+asyncpg://dialogue_test:dialogue_test@127.0.0.1:55432/dialogue_test",
 )
 
 
@@ -77,7 +76,8 @@ async def database(isolated_schema):
     async with database.engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE sessions, session_messages, session_entries, session_compactions CASCADE"
+                "TRUNCATE memories, memory_sources, sessions, session_messages, "
+                "session_entries, session_compactions CASCADE"
             )
         )
     await database.close()

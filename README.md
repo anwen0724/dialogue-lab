@@ -1,6 +1,6 @@
 # Dialogue Lab
 
-Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持英语口语练习、模拟面试和日常交流。你可以通过说话或打字与 AI 对话，实时查看回复并听取语音，也可以重新打开已有会话继续交流。
+Dialogue Lab 是一个以语音交流为重点的 AI 角色陪伴应用。你可以日常聊天，也可以直接约定用英文交流、练习口语或模拟面试。你可以通过说话或打字与 AI 对话，实时查看回复并听取语音，也可以重新打开已有会话继续交流。
 
 应用在本地运行，会话和消息保存在本地 PostgreSQL 中。对话模型、语音识别和语音合成通过配置的供应商服务调用。
 
@@ -14,6 +14,7 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 - **打断控制**：可开启或关闭打断。关闭后，回复生成和播放期间暂停收音，结束后继续；也可以随时手动停止回复。
 - **主动开场**：新会话由模型根据角色身份生成开场并播放；重新打开已有会话不会重复开场或播放历史音频。
 - **上下文组织与压缩**：结合系统指令和会话消息组织模型输入；长对话达到压缩条件时，使用摘要和近期消息继续交流，保留原始记录。
+- **交流约定与角色记忆**：当前会话保存活动和持续要求；角色记忆可跨会话查询、核对来源、纠正和遗忘。模型通过工具写入，不要求切换固定练习模式。
 - **多供应商模型接入**：独立 AI 层支持 OpenAI、Anthropic 和 DeepSeek，可通过配置选择供应商与模型。
 
 ## 系统组成
@@ -23,9 +24,10 @@ Dialogue Lab 是一个以语音交流为重点的 AI 对话练习应用，支持
 | 模块 | 职责 |
 | --- | --- |
 | 角色管理 | 保存角色资料、身份文档和图片，管理角色创建、修改与归档 |
-| 会话管理 | 管理 Session，保存和读取 UserMessage、AssistantMessage |
+| 会话管理 | 管理 Session，保存会话状态、用户消息、模型响应和工具结果 |
 | 上下文管理 | 加载系统指令、组织有效消息、处理上下文预算与压缩，并转换为 AI 层输入 |
-| runtime | 调度输入处理、上下文准备、模型调用和语音输出，协调取消与消息保存 |
+| runtime | 调度输入，以 Run 驱动上下文、模型和工具循环，协调取消与语音输出 |
+| 记忆 | 保存角色范围的长期记忆和来源，查询、纠正和遗忘后更新模型投影 |
 | AI 层 | 提供统一模型调用接口，处理供应商协议与流式响应 |
 | 语音模块 | 管理语音识别和合成 |
 | 存储模块 | 通过 PostgreSQL 保存会话、消息和压缩记录 |
@@ -130,7 +132,7 @@ docker compose stop
 
 ### 更新数据库结构
 
-首次初始化或更新代码后，如果启动器提示数据库版本不一致，在项目根目录手动执行：
+更新已有数据库前，停止应用并备份数据库和 `data/`。如果启动器提示数据库版本不一致，在项目根目录手动执行：
 
 ```powershell
 uv run alembic upgrade head
@@ -168,7 +170,11 @@ npm run dev
 
 每个角色可以有多个会话。删除已有会话的角色会归档并保留记录，可从“最近练习”重新打开；没有会话的角色直接删除。旧版本的独立会话也从“最近练习”打开。
 
-复制角色会复制名称、分类、人物名字、身份指令、音色、封面和背景，生成独立文件。副本名称追加“（副本）”，不复制会话和消息。
+复制角色会复制名称、分类、人物名字、身份指令、音色、封面和背景，生成独立文件。副本名称追加“（副本）”，不复制会话、消息和记忆。
+
+可以直接说“接下来用英文，只纠正明显错误”“不用纠错了”或“结束练习”。这些持续约定保存在当前会话；一次性翻译不建立活动，新建会话从空状态开始。
+
+长期信息可以说“记住我喜欢无糖乌龙茶”，之后通过对话查询、纠正或要求忘记。记忆只在同一角色的会话间共享，当前采用文字片段查询。遗忘不删除界面中的原始聊天记录；后续模型输入会遮蔽受影响轮次，并使旧摘要失效，因此同轮其他细节也可能暂时不再提供。
 
 同一会话同时只允许一个窗口控制实时输入，其他窗口可以读取消息。
 
@@ -186,18 +192,56 @@ npm run dev
 
 没有角色归属的旧会话继续使用 [prompts/](prompts/) 下的系统指令，以及 `DIALOGUE_LAB_TTS_VOICE` 指定的原音色。角色会话不使用这个音色配置。环境配置变更后需要重启后端，指令正文变更不需要。
 
+## 测试
+
+应用测试使用独立 PostgreSQL，不读取业务库作为默认连接。启动专用容器：
+
+```powershell
+docker run -d --name dialogue-lab-runtime-test `
+  -e POSTGRES_USER=dialogue_test -e POSTGRES_PASSWORD=dialogue_test `
+  -e POSTGRES_DB=dialogue_test -p 127.0.0.1:55432:5432 postgres:17.11
+```
+
+容器已存在时用 `docker start dialogue-lab-runtime-test`。等待 `docker exec dialogue-lab-runtime-test pg_isready -U dialogue_test` 成功后执行：
+
+```powershell
+uv run pytest -q --basetemp .pytest_cache/acceptance
+uv run ruff check src tests migrations
+cd frontend
+npm run test -- --reporter=dot
+npm run typecheck
+npm run lint
+npm run build
+cd ..
+```
+
+`TEST_DATABASE_URL` 可指定另一个专用测试库。每次测试创建独立 schema，结束后删除该 schema；不要指定业务数据库。默认测试只在模型和语音供应商边界使用替身。
+
+真实服务检查会产生供应商请求和费用，使用合成对话及隔离数据库。填写正常应用密钥后，显式开启：
+
+```powershell
+$env:DIALOGUE_LAB_LIVE_TESTS = '1'
+$env:DIALOGUE_LAB_LIVE_SPEECH = '1'
+uv run pytest tests/test_live_agent.py -q --basetemp .pytest_cache/live-acceptance
+Remove-Item Env:DIALOGUE_LAB_LIVE_TESTS
+Remove-Item Env:DIALOGUE_LAB_LIVE_SPEECH
+```
+
+真实语音检查验证合成音频和时间信息返回，不替代浏览器麦克风、听感和人工打断验收。测试结束可用 `docker stop dialogue-lab-runtime-test` 停止专用数据库。
+
 ## 项目目录
 
 ```text
 frontend/                 前端页面、会话交互、录音与播放
 src/dialogue_lab/
   api/                    HTTP 与 WebSocket 接口
-  characters/                 角色资料与图片管理
+  characters/             角色资料与图片管理
   resources/              内置角色身份文档和图片
   sessions/               会话管理
   settings/               全局模型设置与可选目录
-  context/                上下文管理
-  runtime/                调度与模型调用
+  context/                材料选择、状态快照、预算与压缩
+  memory/                 角色记忆与来源
+  runtime/                会话调度、Run 与工具循环
   voice/                  语音识别与合成接入
   storage/                数据库访问
   bootstrap.py            应用资源装配

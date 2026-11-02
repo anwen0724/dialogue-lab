@@ -48,7 +48,8 @@ async def test_confirmed_input_is_saved_once_and_reopened(session_service):
 
 
 @pytest.mark.asyncio
-async def test_cancelled_reply_is_saved_between_its_input_and_next_input(session_service):
+@pytest.mark.parametrize("partial", ["Partial", ""])
+async def test_cancelled_reply_is_saved_between_its_input_and_next_input(session_service, partial):
     session_id = int((await session_service.create("练习"))["session_id"])
     request = uuid4()
     await session_service.submit(session_id, request, "Hello")
@@ -59,7 +60,7 @@ async def test_cancelled_reply_is_saved_between_its_input_and_next_input(session
             "test",
             "dialogue",
             "test",
-            content=[TextContent("Partial")],
+            content=[TextContent(partial)],
             stop_reason="aborted",
         ),
     )
@@ -70,8 +71,10 @@ async def test_cancelled_reply_is_saved_between_its_input_and_next_input(session
         "assistant_message",
         "user_message",
     ]
-    assert opened["messages"][1]["message_json"]["content"][0]["text"] == "Partial"
+    assert opened["messages"][1]["message_json"]["content"][0]["text"] == partial
     assert opened["messages"][1]["message_json"]["status"] == "cancelled"
+    listing = await session_service.list()
+    assert next(s for s in listing if s["session_id"] == str(session_id))["message_count"] == 3
 
 
 @pytest.mark.asyncio

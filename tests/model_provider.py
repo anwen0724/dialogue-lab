@@ -1,6 +1,14 @@
 """测试供应商边界；应用仍使用真实 Models 和上下文转换。"""
 
-from ai import AssistantMessage, AssistantMessageEvent, Model, Models, TextContent, create_provider
+from ai import (
+    AssistantMessage,
+    AssistantMessageEvent,
+    Model,
+    Models,
+    TextContent,
+    ToolCall,
+    create_provider,
+)
 from ai.auth.api_key import ApiKeyAuth
 
 
@@ -15,9 +23,15 @@ class ScriptedAdapter:
         self.calls.append((model, auth, options))
         message = AssistantMessage(model.provider, model.id, model.api)
         yield AssistantMessageEvent("start", message)
+        reply = next(self.replies)
+        if reply and isinstance(reply[0], ToolCall):
+            message.content.extend(reply)
+            message.stop_reason = "tool_use"
+            yield AssistantMessageEvent("done", message)
+            return
         block = TextContent()
         message.content.append(block)
-        for fragment in next(self.replies):
+        for fragment in reply:
             block.text += fragment
             yield AssistantMessageEvent("text_delta", message, 0, fragment)
         yield AssistantMessageEvent("done", message)

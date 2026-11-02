@@ -7,7 +7,7 @@ import pytest
 import speechio
 from ai import AbortController
 
-from dialogue_lab.runtime.model_call import stream_speech
+from dialogue_lab.voice.output import stream_speech
 from dialogue_lab.voice.synthesis import Synthesis
 
 

@@ -2,12 +2,14 @@
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
     ForeignKeyConstraint,
     Identity,
     Index,
+    Integer,
     MetaData,
     Table,
     Text,
@@ -43,6 +45,7 @@ characters = Table(
     Column("cover_image", Text),
     Column("background_image", Text),
     Column("prompt_key", Text, nullable=False, unique=True),
+    Column("memory_revision", Integer, nullable=False, server_default="0"),
     Column("status", Text, nullable=False, server_default="active"),
     timestamp("created_at", default=True),
     timestamp("updated_at", default=True),
@@ -60,6 +63,12 @@ sessions = Table(
     Column("status", Text, nullable=False, server_default="active"),
     Column("active_entry_id", BigInteger),
     Column("model_selection", JSONB),
+    Column(
+        "session_state",
+        JSONB,
+        nullable=False,
+        server_default='{"activity": null, "instructions": []}',
+    ),
     timestamp("created_at", default=True),
     timestamp("updated_at", default=True),
     timestamp("archived_at", nullable=True),
@@ -79,11 +88,22 @@ messages = Table(
     Column("session_id", BigInteger, nullable=False),
     Column("request_id", UUID(as_uuid=True), nullable=False),
     Column("message_kind", Text, nullable=False),
+    Column("step", Integer, nullable=False, server_default="0"),
+    Column("playback_state", Text),
     Column("message_json", JSONB, nullable=False),
     timestamp("created_at", default=True),
     timestamp("completed_at", nullable=True),
-    CheckConstraint("message_kind IN ('user_message', 'assistant_message')", name="message_kind"),
-    UniqueConstraint("session_id", "message_kind", "request_id", name="message_request"),
+    CheckConstraint(
+        "message_kind IN ('user_message', 'assistant_message', 'tool_result')", name="message_kind"
+    ),
+    CheckConstraint("step >= 0", name="message_step"),
+    CheckConstraint(
+        "playback_state IS NULL OR (message_kind = 'assistant_message' "
+        "AND playback_state IN ('unconfirmed', 'completed', 'interrupted'))",
+        name="message_playback",
+    ),
+    CheckConstraint("message_kind <> 'user_message' OR step = 0", name="user_step"),
+    UniqueConstraint("session_id", "message_kind", "request_id", "step", name="message_request"),
     UniqueConstraint("session_id", "message_id", name="message_session_id"),
     ForeignKeyConstraint(["session_id"], ["sessions.session_id"], name="message_session"),
 )
@@ -129,6 +149,7 @@ compactions = Table(
     Column("trigger", Text, nullable=False),
     Column("status", Text, nullable=False),
     Column("summary_text", Text),
+    Column("memory_revision", Integer, nullable=False, server_default="0"),
     Column("covered_until_entry_id", BigInteger),
     Column("first_kept_entry_id", BigInteger),
     Column("usage", JSONB),
@@ -177,4 +198,36 @@ sessions.append_constraint(
         name="session_active_entry",
         use_alter=True,
     )
+)
+
+memories = Table(
+    "memories",
+    metadata,
+    identity("memory_id"),
+    Column("character_id", BigInteger, nullable=False),
+    ForeignKeyConstraint(["character_id"], ["characters.character_id"]),
+    Column("content", Text),
+    Column("is_core", Boolean, nullable=False, server_default="false"),
+    Column("revision", Integer, nullable=False, server_default="1"),
+    Column("status", Text, nullable=False, server_default="active"),
+    timestamp("created_at", default=True),
+    timestamp("updated_at", default=True),
+    CheckConstraint("revision > 0"),
+    CheckConstraint(
+        "(status = 'active' AND content IS NOT NULL AND length(trim(content)) > 0) "
+        "OR (status = 'forgotten' AND content IS NULL AND NOT is_core)",
+        name="memory_content",
+    ),
+)
+Index("memory_character", memories.c.character_id, memories.c.status, memories.c.is_core)
+
+memory_sources = Table(
+    "memory_sources",
+    metadata,
+    Column("memory_id", BigInteger, primary_key=True),
+    Column("revision", Integer, primary_key=True),
+    Column("message_id", BigInteger, primary_key=True),
+    ForeignKeyConstraint(["memory_id"], ["memories.memory_id"]),
+    ForeignKeyConstraint(["message_id"], ["session_messages.message_id"]),
+    CheckConstraint("revision > 0"),
 )

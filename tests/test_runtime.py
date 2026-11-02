@@ -2,11 +2,12 @@
 
 import asyncio
 from dataclasses import replace
+from queue import Queue
 from uuid import uuid4
 
 import pytest
 import speechio
-from ai import SimpleOptions, SystemMessage, TextContent, UserMessage
+from ai import SimpleOptions, TextContent, UserMessage
 from model_provider import ScriptedAdapter
 from model_provider import test_models as make_models
 
@@ -18,6 +19,88 @@ from dialogue_lab.runtime.scheduler import Scheduler
 from dialogue_lab.sessions.types import SessionError
 from dialogue_lab.storage.compaction_store import CompactionStore
 from dialogue_lab.voice.synthesis import Synthesis
+
+
+@pytest.mark.asyncio
+async def test_speech_tail_is_not_delayed_by_post_reply_compaction(
+    session_service, database, tmp_path, monkeypatch
+):
+    (tmp_path / "default.md").write_text("Brief", encoding="utf-8")
+    summarizing, release, audio_received = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class SummaryAdapter(ScriptedAdapter):
+        async def stream_simple(self, model, context, auth, options):
+            if len(self.inputs) == 1:
+                summarizing.set()
+                await release.wait()
+            async for event in super().stream_simple(model, context, auth, options):
+                yield event
+
+    class SpeechStream:
+        def __init__(self):
+            self.queue = Queue()
+
+        def send_text(self, text):
+            pass
+
+        def finish_input(self):
+            self.queue.put(speechio.AudioChunk(b"\0\0", speechio.AudioFormat(sample_rate=24000)))
+            self.queue.put(None)
+
+        def events(self):
+            return iter(self.queue.get, None)
+
+        def cancel(self):
+            self.queue.put(None)
+
+        def close(self):
+            self.cancel()
+            return speechio.CloseResult()
+
+    class Synthesizer:
+        def __init__(self, config):
+            pass
+
+        def open_stream(self, *, options):
+            return SpeechStream()
+
+        def close(self):
+            return speechio.CloseResult()
+
+    monkeypatch.setattr(speechio, "Synthesizer", Synthesizer)
+    models, model = make_models(SummaryAdapter([["b" * 1000], ["summary"]]))
+    sid = int((await session_service.create("Tail"))["session_id"])
+    manager = ContextManager(
+        session_service,
+        models,
+        model,
+        SystemPrompts(tmp_path),
+        CompactionStore(database),
+        CompactionSettings(reserve_tokens=99499, keep_recent_tokens=250),
+    )
+
+    async def emit(event):
+        if event["type"] == "audio":
+            audio_received.set()
+
+    scheduler = Scheduler(
+        sid,
+        session_service,
+        manager,
+        models,
+        model,
+        emit,
+        options=SimpleOptions(max_output_tokens=1024),
+        synthesis_factory=lambda: Synthesis(api_key="test", model="test", voice="test"),
+    )
+    try:
+        await scheduler.submit(Submit(uuid4(), "a" * 1000, "default"))
+        await asyncio.wait_for(summarizing.wait(), 3)
+        await asyncio.wait_for(audio_received.wait(), 2)
+    finally:
+        release.set()
+        await scheduler.close()
+        await models.aclose()
 
 
 @pytest.mark.asyncio
@@ -102,11 +185,11 @@ async def test_runtime_uses_transformed_input_or_reports_preparation_failure(
     async def transform(messages, signal):
         if outcome == "failure":
             raise RuntimeError("transform failed")
-        return [UserMessage("x" * 400 if outcome == "oversize" else "Adjusted")]
+        return [UserMessage("x" * 8000 if outcome == "oversize" else "Adjusted")]
 
     adapter = ScriptedAdapter([["Reply"]])
     models, model = make_models(adapter)
-    model = replace(model, context_window=50)
+    model = replace(model, context_window=1000)
     session_id = int((await session_service.create("Practice"))["session_id"])
     manager = ContextManager(
         session_service,
@@ -135,10 +218,8 @@ async def test_runtime_uses_transformed_input_or_reports_preparation_failure(
         await asyncio.wait_for(scheduler.wait_idle(), 2)
         if outcome == "success":
             assert len(adapter.inputs) == 1
-            assert adapter.inputs[0].messages == [
-                SystemMessage(content="Be brief."),
-                UserMessage("Adjusted"),
-            ]
+            assert adapter.inputs[0].messages[0].content.startswith("Be brief.")
+            assert adapter.inputs[0].messages[1:] == [UserMessage("Adjusted")]
         else:
             assert adapter.inputs == []
             code = "REPLY_FAILED" if outcome == "failure" else "CONTEXT_TOO_LARGE"
@@ -187,6 +268,7 @@ async def test_new_input_cancels_old_reply_and_saves_partial_before_next_input(
         await asyncio.wait_for(scheduler.wait_idle(), 2)
         messages = (await session_service.open(session_id))["messages"]
         assert messages[1]["message_json"]["status"] == "cancelled"
+        assert messages[1].get("playback_state") == "interrupted"
         assert messages[1]["message_json"]["content"][0]["text"] == "Partial"
         assert messages[2]["message_json"]["display_content"][0]["text"] == "Second"
         assert messages[3]["message_json"]["content"][0]["text"] == "New answer"
@@ -413,7 +495,7 @@ async def test_opening_is_application_message_and_only_generated_once(session_se
         await scheduler.wait_idle()
         await scheduler.start(uuid4(), "default")
         assert len(adapter.inputs) == 1
-        assert adapter.inputs[0].messages[0] == SystemMessage(content="你是 Emma。")
+        assert adapter.inputs[0].messages[0].content.startswith("你是 Emma。")
         assert "现在开始一段新对话" in adapter.inputs[0].messages[1].content[0].text
         messages = (await session_service.open(session_id))["messages"]
         assert messages[0]["message_json"]["source"] == "opening"
@@ -455,6 +537,9 @@ async def test_disabling_interrupt_blocks_until_playback_ack_and_stop_releases(
         assert caught.value.code == "REPLY_BUSY"
         assert len((await session_service.open(session_id))["messages"]) == 2
         await scheduler.playback_finished(str(first))
+        assert (await session_service.open(session_id))["messages"][-1].get(
+            "playback_state"
+        ) == "completed"
         await scheduler.submit(Submit(uuid4(), "Second", "default"))
         await scheduler.stop()
         assert events[-1]["type"] == "runtime_state"

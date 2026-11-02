@@ -6,7 +6,8 @@ from dataclasses import replace
 from ai import AbortController, SimpleOptions
 
 from dialogue_lab.runtime.events import OPENING_REQUEST, Submit
-from dialogue_lab.runtime.model_call import call_model, stream_speech
+from dialogue_lab.runtime.run import Run
+from dialogue_lab.runtime.tools import Tools
 from dialogue_lab.sessions.types import SessionError
 
 
@@ -22,6 +23,8 @@ class Scheduler:
         options=None,
         synthesis_factory=None,
         settings_loader=None,
+        tools=None,
+        max_tool_rounds=8,
     ):
         self.session_id, self.sessions, self.context = session_id, sessions, context
         self.models, self.model, self.emit = models, model, emit
@@ -31,18 +34,23 @@ class Scheduler:
         self._commands = asyncio.Queue()
         self._worker = None
         self._controller = None
-        self._active = None
+        self._run = None
         self._closed = False
         self._compacting = False
         self._manual = False
         self.allow_interrupt = True
         self.input_epoch = 0
         self._input_blocked = False
-        self._playback_done = False
+        self.tools = tools or Tools(sessions)
+        self.max_tool_rounds = max_tool_rounds
         self._waiting = []
         self._idle = asyncio.Event()
         self._idle.set()
         self._actor = asyncio.create_task(self._serve())
+
+    @property
+    def _active(self):
+        return self._run.id if self._run and self._run.output_enabled else None
 
     async def submit(self, request):
         return await self._command("submit", request)
@@ -155,13 +163,18 @@ class Scheduler:
                 elif kind == "finished" and value == self._active:
                     self._worker = None
                     self._idle.set()
-                    if self._playback_done:
-                        self._active = None
+                    if self._run is not None and self._run.playback_done:
+                        self._run.output_enabled = False
                     await self._state()
                 elif kind == "played" and value == self._active:
-                    self._playback_done = True
+                    self._run.playback_done = True
+                    await self.sessions.record_playback(
+                        self.session_id,
+                        self._run.request.request_id,
+                        "completed",
+                    )
                     if self._worker is None:
-                        self._active = None
+                        self._run.output_enabled = False
                     await self._state()
                 if future is not None and not future.done():
                     future.set_result(result)
@@ -195,96 +208,44 @@ class Scheduler:
         # 校验预设后才取消旧回复；上下文构建仍会按 D1 读取当次文档。
         await asyncio.to_thread(self.context.prompts.load, request.preset)
         await self._stop(announce=False)
+        await self.sessions.close_pending_tools(self.session_id)
         message, _ = await self.sessions.submit(
             self.session_id, request.request_id, request.text, request.source
         )
         await self.emit({"type": "message_saved", "message": message})
-        self._active = str(request.request_id)
-        self._playback_done = False
-        self._controller = AbortController()
+        run = Run(
+            self.session_id,
+            request,
+            self.sessions,
+            self.context,
+            self.tools,
+            self.emit,
+            self._output,
+            self._maybe_compact,
+            self.max_tool_rounds,
+        )
+        self._run = run
         self._idle.clear()
-        self._worker = asyncio.create_task(self._reply(request, self._controller))
+        self._worker = asyncio.create_task(self._reply(run))
         await self._state()
         return message
 
-    async def _reply(self, request, controller):
-        request_id = str(request.request_id)
-        speech = None
-        started = False
-        texts = asyncio.Queue()
+    async def _reply(self, run):
         try:
             await self._configure()
-            prepared = await self.context.build(self.session_id, request.preset)
-            prepared = await self._maybe_compact(request, prepared, controller)
-            if controller.signal.aborted:
-                return
-            context = await self.context.to_context(
-                prepared,
-                controller.signal,
-                max_output_tokens=self.options.max_output_tokens,
-            )
-            await self._output(request_id, {"type": "reply_started"})
-            started = True
-
-            async def audio_output(event):
-                await self._output(request_id, event)
-
-            if self.synthesis_factory is not None:
-                speech = asyncio.create_task(
-                    stream_speech(self.synthesis_factory, texts, controller.signal, audio_output)
-                )
-
-            async def forward(event):
-                await self._output(request_id, event)
-                if not controller.signal.aborted:
-                    texts.put_nowait(event["text"])
-
-            result = await call_model(
-                self.models,
-                self.model,
-                context,
-                replace(self.options, signal=controller.signal),
-                forward,
-            )
-            texts.put_nowait(None)
-            message = await self.sessions.save_assistant(
-                self.session_id, request.request_id, result
-            )
-            await self.emit({"type": "message_saved", "message": message})
-            if result.stop_reason not in ("error", "aborted"):
-                self.context.remember_usage(self.session_id, prepared)
-            await self._output(
-                request_id,
-                {"type": "generation_finished", "status": message["message_json"]["status"]},
-            )
-            if not controller.signal.aborted and result.stop_reason not in ("error", "aborted"):
-                updated = await self.context.build(self.session_id, request.preset)
-                await self._maybe_compact(request, updated, controller)
-        except asyncio.CancelledError:
-            # 上下文准备也可响应停止；正常收尾，不能让取消冒泡终止命令调度器。
-            if not controller.signal.aborted:
-                raise
+            await run.execute(self.models, self.model, self.options, self.synthesis_factory)
         except Exception as error:
-            # 开始输出前失败时，浏览器没有播放任务，也就不会发送完成回执。
-            if not started:
-                self._playback_done = True
+            run.playback_done = True
             await self._output(
-                request_id,
+                run.id,
                 {
                     "type": "error",
                     "code": error.code if isinstance(error, SessionError) else "REPLY_FAILED",
-                    "message": str(error)
-                    if isinstance(error, SessionError)
-                    else "未能完成回复，请检查配置后重试。",
+                    "message": str(error) if isinstance(error, SessionError) else "未能完成回复。",
                 },
             )
         finally:
-            texts.put_nowait(None)
-            if speech is not None:
-                await speech
-            else:
-                await self._output(request_id, {"type": "audio_finished"})
-            self._commands.put_nowait(("finished", request_id, None))
+            self._commands.put_nowait(("finished", run.id, None))
 
     async def _maybe_compact(self, request, prepared, controller):
         if not self.context.needs_compaction(prepared) or controller.signal.aborted:
@@ -299,10 +260,14 @@ class Scheduler:
                 {"type": "compaction_finished", "status": "completed" if changed else "unchanged"}
             )
             return (
-                await self.context.build(self.session_id, request.preset) if changed else prepared
+                await self.context.build(self.session_id, request.preset, prepared.tools)
+                if changed
+                else prepared
             )
         except SessionError as error:
             await self.emit({"type": "compaction_finished", "status": "failed", "code": error.code})
+            if error.code == "MEMORY_CHANGED":
+                return await self.context.build(self.session_id, request.preset, prepared.tools)
             return prepared
         finally:
             self._commands.put_nowait(("compacted", None, None))
@@ -348,7 +313,8 @@ class Scheduler:
     async def _stop(self, *, announce=True):
         """先撤销输出资格，再传播取消并等待旧消息保存完成。"""
         previous = self._active
-        self._active = None
+        if self._run is not None:
+            self._run.stop()
         if previous is not None:
             await self.emit({"type": "reply_stopped", "request_id": previous})
         if self._controller is not None:
@@ -356,6 +322,12 @@ class Scheduler:
         if self._worker is not None:
             await self._worker
             self._worker = None
+        if previous is not None and not self._run.playback_done:
+            await self.sessions.record_playback(
+                self.session_id,
+                self._run.request.request_id,
+                "interrupted",
+            )
         self._idle.set()
         if announce:
             await self._state()

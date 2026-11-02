@@ -30,7 +30,7 @@ def test_character_migration_preserves_existing_data_and_can_downgrade(isolated_
     )[0]
     session_id = linked["session_id"]
     try:
-        command.upgrade(config, "head")
+        command.upgrade(config, "0004")
         after = asyncio.run(sql("SELECT * FROM characters ORDER BY character_id"))
         expected = [dict(row) for row in before]
         for row in expected:

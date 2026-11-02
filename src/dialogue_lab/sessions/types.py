@@ -16,6 +16,13 @@ class SessionError(Exception):
         self.status = status
 
 
+class SessionState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    activity: str | None = None
+    instructions: list[str] = Field(default_factory=list)
+
+
 def session_view(row) -> dict:
     """bigint 对外编码为字符串，防止浏览器丢失精度。"""
     return {
@@ -26,6 +33,7 @@ def session_view(row) -> dict:
         "latest_message": row.get("latest_message", ""),
         "status": row["status"],
         "model_selection": row["model_selection"],
+        "session_state": row["session_state"],
         "created_at": row["created_at"].isoformat(),
         "updated_at": row["updated_at"].isoformat(),
     }
@@ -38,4 +46,5 @@ def message_view(row) -> dict:
         "request_id": str(row["request_id"]),
         "message_kind": row["message_kind"],
         "message_json": row["message_json"],
+        "playback_state": row["playback_state"],
     }

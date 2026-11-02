@@ -4,18 +4,19 @@ from sqlalchemy import func, insert, select, update
 
 from dialogue_lab.sessions.types import SessionError
 from dialogue_lab.storage.session_store import lock_session
-from dialogue_lab.storage.tables import compactions, entries, sessions
+from dialogue_lab.storage.tables import characters, compactions, entries, sessions
 
 
 class CompactionStore:
     def __init__(self, database):
         self.database = database
 
-    async def begin(self, session_id, anchor, trigger):
+    async def begin(self, session_id, anchor, trigger, memory_revision=0):
         async with self.database.engine.begin() as connection:
             session = await lock_session(connection, session_id)
             if session["active_entry_id"] != anchor:
                 raise SessionError("PATH_CHANGED", "当前路径与压缩准备不一致。")
+            await check_memory_revision(connection, session, memory_revision)
             return (
                 await connection.execute(
                     insert(compactions)
@@ -24,6 +25,7 @@ class CompactionStore:
                         anchor_entry_id=anchor,
                         trigger=trigger,
                         status="running",
+                        memory_revision=memory_revision,
                     )
                     .returning(compactions.c.compaction_id)
                 )
@@ -50,6 +52,7 @@ class CompactionStore:
                 or session["active_entry_id"] != record["anchor_entry_id"]
             ):
                 raise SessionError("PATH_CHANGED", "压缩准备已经失效，未切换路径。")
+            await check_memory_revision(connection, session, record["memory_revision"])
             rows = (
                 (
                     await connection.execute(
@@ -71,7 +74,12 @@ class CompactionStore:
                 or (
                     first_kept is not None
                     and (
-                        first_kept not in path or path.index(first_kept) != path.index(covered) + 1
+                        first_kept not in path
+                        or path.index(first_kept) <= path.index(covered)
+                        or any(
+                            by_id[entry_id]["entry_type"] != "compaction"
+                            for entry_id in path[path.index(covered) + 1 : path.index(first_kept)]
+                        )
                     )
                 )
                 or (first_kept is None and covered != path[-1])
@@ -144,3 +152,17 @@ class CompactionStore:
                     error_message="服务重启，压缩未完成。",
                 )
             )
+
+
+async def check_memory_revision(connection, session, expected):
+    if session["character_id"] is None:
+        return
+    actual = await connection.scalar(
+        select(characters.c.memory_revision)
+        .where(
+            characters.c.character_id == session["character_id"],
+        )
+        .with_for_update()
+    )
+    if actual != expected:
+        raise SessionError("MEMORY_CHANGED", "记忆已修改，请重新构建上下文后压缩。")

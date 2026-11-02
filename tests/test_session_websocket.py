@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 import speechio
-from ai import create_provider
+from ai import ToolCall, create_provider
 from ai.auth.api_key import ApiKeyAuth
 from conftest import TEST_DATABASE_URL
 from fastapi.testclient import TestClient
@@ -169,6 +169,36 @@ def test_text_submission_is_saved_and_streams_reply(monkeypatch):
         assert saved[1]["message_json"]["content"][0]["text"] == "Hello back"
 
 
+def test_websocket_tool_turn_exposes_only_dialogue_and_restores_state(monkeypatch):
+    application = create_app()
+    with TestClient(application) as client:
+        install_provider(
+            application,
+            monkeypatch,
+            [
+                [ToolCall("state", "update_session_state", arguments={"activity": "English"})],
+                ["Let's talk."],
+            ],
+        )
+        sid = client.post("/api/sessions", json={"title": "Tool turn"}).json()["session_id"]
+        with client.websocket_connect(f"/api/sessions/{sid}/realtime") as socket:
+            socket.receive_json()
+            socket.send_json({"type": "submit", "request_id": str(uuid4()), "text": "Use English"})
+            events = []
+            while not {"generation_finished", "audio_finished"}.issubset(
+                {event["type"] for event in events}
+            ):
+                events.append(socket.receive_json())
+            saved = [event["message"] for event in events if event["type"] == "message_saved"]
+            assert [m["message_kind"] for m in saved] == ["user_message", "assistant_message"]
+            assert "".join(e["text"] for e in events if e["type"] == "text_delta") == "Let's talk."
+        reopened = client.get(f"/api/sessions/{sid}").json()
+        assert reopened["session_state"]["activity"] == "English"
+        assert len(reopened["messages"]) == 2
+        listing = client.get("/api/sessions").json()
+        assert next(s for s in listing if s["session_id"] == sid)["message_count"] == 2
+
+
 def test_recording_tail_is_submitted_once_before_recording_stops(monkeypatch):
     monkeypatch.setenv(
         "DIALOGUE_LAB_DATABASE_URL",
@@ -238,7 +268,7 @@ def test_character_identity_update_applies_to_next_turn_and_title_uses_real_inpu
             socket.send_json({"type": "start_session", "request_id": str(uuid4())})
             while socket.receive_json()["type"] != "generation_finished":
                 pass
-            assert adapter.inputs[0].messages[0].content == "You are Emma, a coffee lover."
+            assert adapter.inputs[0].messages[0].content.startswith("You are Emma, a coffee lover.")
             client.patch(
                 f"/api/characters/{character['character_id']}",
                 json={"system_prompt": "You are Emma, a tea lover."},
@@ -246,7 +276,7 @@ def test_character_identity_update_applies_to_next_turn_and_title_uses_real_inpu
             socket.send_json({"type": "submit", "request_id": str(uuid4()), "text": "I like tea."})
             while socket.receive_json()["type"] != "generation_finished":
                 pass
-            assert adapter.inputs[1].messages[0].content == "You are Emma, a tea lover."
+            assert adapter.inputs[1].messages[0].content.startswith("You are Emma, a tea lover.")
         listed = client.get(
             "/api/sessions", params={"character_id": character["character_id"]}
         ).json()[0]
@@ -281,12 +311,20 @@ def test_character_rename_updates_model_prompt_without_rewriting_document(monkey
             socket.send_json({"type": "start_session", "request_id": str(uuid4())})
             while socket.receive_json()["type"] != "generation_finished":
                 pass
-            assert adapter.inputs[0].messages[0].content == "You are Emma, an English partner."
+            assert (
+                adapter.inputs[0]
+                .messages[0]
+                .content.startswith("You are Emma, an English partner.")
+            )
             changed = client.patch(character_url, json={"character_name": "Alice"}).json()
             assert changed["character_name"] == "Alice"
             assert changed["system_prompt"] == template
             socket.send_json({"type": "submit", "request_id": str(uuid4()), "text": "Hello"})
             while socket.receive_json()["type"] != "generation_finished":
                 pass
-            assert adapter.inputs[1].messages[0].content == "You are Alice, an English partner."
+            assert (
+                adapter.inputs[1]
+                .messages[0]
+                .content.startswith("You are Alice, an English partner.")
+            )
         assert client.get(character_url).json()["system_prompt"] == template

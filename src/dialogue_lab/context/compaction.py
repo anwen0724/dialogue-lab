@@ -13,6 +13,7 @@ from ai import (
     ThinkingContent,
     Tool,
     ToolCall,
+    ToolResultMessage,
     Usage,
     UserMessage,
     message_to_dict,
@@ -27,6 +28,7 @@ class CompactionSettings:
     enabled: bool = True
     reserve_tokens: int = 16384
     keep_recent_tokens: int = 20000
+    memory_tokens: int = 2000
 
 
 def estimate_context_tokens(
@@ -61,6 +63,9 @@ def find_cut_point(messages: list[ApplicationMessage], keep_recent_tokens: int) 
     for index in range(len(messages) - 1, -1, -1):
         tokens += estimate_tokens(messages[index])
         if tokens >= keep_recent_tokens:
+            # 一个响应可以请求多个工具，所有结果都与该响应一起保留。
+            while index > 0 and isinstance(messages[index], ToolResultMessage):
+                index -= 1
             return index
     return 0
 
@@ -80,7 +85,9 @@ def estimate_tokens(message: ApplicationMessage) -> int:
             elif isinstance(block, ImageContent):
                 chars += 4800
             elif isinstance(block, ToolCall):
-                chars += len(block.name) + len(block.arguments_json)
+                chars += len(block.name) + len(
+                    block.arguments_json or json.dumps(block.arguments, ensure_ascii=False)
+                )
     if isinstance(message, SystemMessage):
         chars += sum(len(section) for section in message.sections.values() if section)
         chars += sum(

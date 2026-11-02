@@ -13,13 +13,16 @@ from dotenv import dotenv_values
 from dialogue_lab.characters.service import CharacterService
 from dialogue_lab.context.manager import ContextManager
 from dialogue_lab.context.system_prompt import SystemPrompts
+from dialogue_lab.memory.service import MemoryService
 from dialogue_lab.runtime.scheduler import Scheduler
 from dialogue_lab.runtime.settings import ReplySettings
+from dialogue_lab.runtime.tools import Tools
 from dialogue_lab.sessions.service import SessionService
 from dialogue_lab.settings.service import SettingsService
 from dialogue_lab.storage.character_store import CharacterStore
 from dialogue_lab.storage.compaction_store import CompactionStore
 from dialogue_lab.storage.database import Database
+from dialogue_lab.storage.memory_store import MemoryStore
 from dialogue_lab.storage.session_store import SessionStore
 from dialogue_lab.voice.catalog import get_speech_model
 from dialogue_lab.voice.synthesis import Synthesis
@@ -32,6 +35,8 @@ class Services:
         self.settings = settings
         self.database = Database(settings.database_url.get_secret_value())
         self.sessions = SessionService(SessionStore(self.database))
+        self.memory = MemoryService(MemoryStore(self.database))
+        self.tools = Tools(self.sessions, self.memory)
         self.compactions = CompactionStore(self.database)
         environment = {
             key: value
@@ -83,6 +88,7 @@ class Services:
             self.prompts,
             self.compactions,
             character_store=self.characters.store,
+            memory=self.memory,
         )
         scheduler = Scheduler(
             session_id,
@@ -92,6 +98,8 @@ class Services:
             model,
             emit,
             settings_loader=self.reply_settings,
+            tools=self.tools,
+            max_tool_rounds=self.settings.agent_max_tool_rounds,
         )
         self.controllers[session_id] = scheduler
         return scheduler

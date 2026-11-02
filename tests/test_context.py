@@ -5,7 +5,17 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from ai import AssistantMessage, SimpleOptions, SystemMessage, TextContent, Tool, Usage, UserMessage
+from ai import (
+    AssistantMessage,
+    SimpleOptions,
+    SystemMessage,
+    TextContent,
+    Tool,
+    ToolCall,
+    ToolResultMessage,
+    Usage,
+    UserMessage,
+)
 from model_provider import ScriptedAdapter
 from model_provider import test_models as make_models
 
@@ -20,6 +30,29 @@ from dialogue_lab.context.messages import CompactionSummary, convert_to_llm
 from dialogue_lab.context.system_prompt import SystemPrompts
 from dialogue_lab.sessions.types import SessionError
 from dialogue_lab.storage.compaction_store import CompactionStore
+
+
+def test_compaction_does_not_separate_tool_results_from_their_call():
+    history = [
+        UserMessage("Earlier " * 100),
+        AssistantMessage(
+            "test",
+            "dialogue",
+            "test",
+            content=[
+                ToolCall("a", "search_memory", arguments={"query": "interview"}),
+                ToolCall("b", "search_memory", arguments={"query": "job"}),
+            ],
+        ),
+        ToolResultMessage("a", "search_memory", "a" * 100),
+        ToolResultMessage("b", "search_memory", "b" * 100),
+        UserMessage("Next"),
+    ]
+    cut = find_cut_point(history, keep_recent_tokens=10)
+    retained = history[cut:]
+    assert isinstance(retained[0], AssistantMessage)
+    assert {b.id for b in retained[0].content} == {"a", "b"}
+    assert [m.tool_call_id for m in retained if isinstance(m, ToolResultMessage)] == ["a", "b"]
 
 
 @pytest.mark.asyncio

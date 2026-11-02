@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ai_model: str = "deepseek-flash"
     ai_reasoning: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     ai_max_output_tokens: int = Field(default=4096, gt=0)
+    agent_max_tool_rounds: int = Field(default=8, ge=1)
     tts_model: str = "qwen-audio-3.1-tts-flash"
     tts_voice: str = "longanhuan_v3.1"
     prompts_directory: Path = Path(__file__).resolve().parents[2] / "prompts"
