@@ -15,7 +15,7 @@ def project_path(path, models, memory_revision=0, withdrawn=frozenset()):
             if row["memory_revision"] == memory_revision:
                 projected = [(row["entry_id"], CompactionSummary(row["summary_text"]))]
         else:
-            if row["request_id"] in withdrawn:
+            if row["message_id"] in withdrawn:
                 row = redact_message(row)
             projected.append((row["entry_id"], restore_message(row, models)))
     return projected

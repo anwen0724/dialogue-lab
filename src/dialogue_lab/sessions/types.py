@@ -48,3 +48,15 @@ def message_view(row) -> dict:
         "message_json": row["message_json"],
         "playback_state": row["playback_state"],
     }
+
+
+def visible_message(row):
+    """聊天读取、列表计数和实时输出共享同一条可见性规则。"""
+    if row["message_kind"] == "tool_result":
+        return False
+    if row["message_kind"] == "user_message":
+        return True
+    payload = row["message_json"]
+    return payload["status"] in ("failed", "cancelled") or any(
+        block["type"] == "text" and block["text"] for block in payload["content"]
+    )

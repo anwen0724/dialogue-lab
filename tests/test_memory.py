@@ -5,7 +5,7 @@ import json
 from uuid import uuid4
 
 import pytest
-from ai import AssistantMessage, SimpleOptions, ToolCall, message_to_dict
+from ai import AssistantMessage, SimpleOptions, TextContent, ToolCall, message_to_dict
 from model_provider import ScriptedAdapter
 from model_provider import test_models as make_models
 
@@ -87,6 +87,77 @@ async def test_memory_search_returns_sources_and_history_is_character_scoped(
     empty, error = await invoke(session_service, foreign, "search_memory", {"query": "面试"})
     assert not error
     assert empty["matches"] == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_state_tool_patch_keeps_the_saved_agreement(session_service):
+    sid = int((await session_service.create("State"))["session_id"])
+    original, error = await invoke(
+        session_service, sid, "update_session_state", {"activity": "English", "instructions": []}
+    )
+    assert not error
+    rejected, error = await invoke(
+        session_service, sid, "update_session_state", {"instructions": "not-a-list"}
+    )
+    assert error
+    assert rejected["code"] == "INVALID_TOOL_ARGUMENTS"
+    assert (await session_service.open(sid))["session_state"] == original
+
+
+@pytest.mark.asyncio
+async def test_empty_time_bound_is_not_treated_as_an_unfiltered_search(session_service, database):
+    character = (await CharacterStore(database).list())[0]["character_id"]
+    sid = int((await session_service.create("Search", character))["session_id"])
+    result, error = await invoke(session_service, sid, "search_memory", {"query": "", "after": ""})
+    assert error
+    assert result["code"] == "INVALID_TIME_RANGE"
+
+
+@pytest.mark.asyncio
+async def test_forgetting_memory_keeps_unrelated_user_input_available(
+    session_service, database, tmp_path
+):
+    (tmp_path / "default.md").write_text("Brief", encoding="utf-8")
+    character = (await CharacterStore(database).list())[0]["character_id"]
+    sid = int((await session_service.create("History", character))["session_id"])
+    old, error = await invoke(
+        session_service, sid, "save_memory", {"content": "OLD-tea", "is_core": True}
+    )
+    assert not error
+    request = uuid4()
+    user, _ = await session_service.submit(sid, request, "周末喜欢骑车")
+    await session_service.save_assistant(
+        sid,
+        request,
+        AssistantMessage("test", "dialogue", "test", content=[TextContent("Ride, then OLD-tea.")]),
+        memory_refs={str(old["id"]): old["revision"]},
+    )
+    _, error = await invoke(session_service, sid, "forget_memory", {"memory_id": old["id"]})
+    assert not error
+    models, model = make_models(ScriptedAdapter([]))
+    try:
+        manager = ContextManager(session_service, models, model, SystemPrompts(tmp_path))
+        context = await manager.to_context(await manager.build(sid, "default"))
+        actual = json.dumps([message_to_dict(m) for m in context.messages], ensure_ascii=False)
+        assert "OLD-tea" not in actual
+        assert "周末喜欢骑车" in actual
+        source = {"session_id": sid, "message_ids": [int(user["message_id"])]}
+        history, error = await invoke(session_service, sid, "read_history", source)
+        assert not error
+        assert "周末喜欢骑车" in json.dumps(history, ensure_ascii=False)
+        saved, error = await invoke(
+            session_service,
+            sid,
+            "save_memory",
+            {
+                "content": "周末喜欢骑车",
+                "source_message_ids": source["message_ids"],
+            },
+        )
+        assert not error, saved
+        assert saved["content"] == "周末喜欢骑车"
+    finally:
+        await models.aclose()
 
 
 @pytest.mark.asyncio

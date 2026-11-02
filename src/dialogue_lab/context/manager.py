@@ -83,7 +83,7 @@ class ContextManager:
             if row["entry_id"] in retained_ids
             and row["entry_type"] == "message"
             and row["message_kind"] == "tool_result"
-            and row["request_id"] not in withdrawn
+            and row["message_id"] not in withdrawn
             for memory_id in row["message_json"].get("memory_refs", {})
         }
         selected, omitted = [], []
@@ -107,7 +107,7 @@ class ContextManager:
         projected_messages = ([snapshot] if snapshot else []) + messages
         memory_refs = {str(item.id): item.revision for item in selected}
         for row in path:
-            if row["entry_type"] == "message" and row["request_id"] not in withdrawn:
+            if row["entry_type"] == "message" and row["message_id"] not in withdrawn:
                 memory_refs.update(row["message_json"].get("memory_refs", {}))
         return PreparedContext(
             system_prompt=system,

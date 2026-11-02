@@ -6,7 +6,7 @@ from dataclasses import asdict
 from ai import ToolResultMessage
 from sqlalchemy import func, insert, literal, select, update
 
-from dialogue_lab.sessions.types import SessionError
+from dialogue_lab.sessions.types import SessionError, visible_message
 from dialogue_lab.storage.character_store import get_character
 from dialogue_lab.storage.database import Database
 from dialogue_lab.storage.tables import compactions, entries, messages, sessions
@@ -83,22 +83,15 @@ class SessionStore:
                 row.update(message_count=0, latest_message="")
             for message in content:
                 payload = message["message_json"]
-                if (
-                    payload.get("source") == "opening"
-                    or message["message_kind"] == "tool_result"
-                    or (
-                        message["message_kind"] == "assistant_message"
-                        and payload.get("status") not in ("failed", "cancelled")
-                        and not any(
-                            b["type"] == "text" and b.get("text")
-                            for b in payload.get("content", [])
-                        )
-                    )
-                ):
+                if payload.get("source") == "opening" or not visible_message(message):
                     continue
                 row = lookup[message["session_id"]]
-                blocks = payload.get("display_content", payload.get("content", []))
-                text = "".join(block.get("text", "") for block in blocks if block["type"] == "text")
+                blocks = (
+                    payload["display_content"]
+                    if message["message_kind"] == "user_message"
+                    else payload["content"]
+                )
+                text = "".join(block["text"] for block in blocks if block["type"] == "text")
                 if row["message_count"] == 0:
                     row["latest_message"] = text[:160]
                 row["message_count"] += 1

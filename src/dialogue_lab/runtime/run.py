@@ -7,8 +7,7 @@ from dataclasses import replace
 from ai import AbortController, ToolCall
 
 from dialogue_lab.runtime.model_call import call_model
-from dialogue_lab.sessions.service import visible_message
-from dialogue_lab.sessions.types import SessionError
+from dialogue_lab.sessions.types import SessionError, visible_message
 from dialogue_lab.voice.output import stream_speech
 
 logger = logging.getLogger(__name__)

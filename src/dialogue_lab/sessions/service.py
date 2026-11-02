@@ -3,8 +3,14 @@
 from dataclasses import asdict
 
 from dialogue_lab.memory.types import redact_message
-from dialogue_lab.sessions.types import SessionError, SessionState, message_view, session_view
-from dialogue_lab.storage.memory_store import MemoryStore
+from dialogue_lab.sessions.types import (
+    SessionError,
+    SessionState,
+    message_view,
+    session_view,
+    visible_message,
+)
+from dialogue_lab.storage.memory_store import withdrawn_messages
 from dialogue_lab.storage.session_store import SessionStore
 
 
@@ -93,36 +99,24 @@ class SessionService:
     async def read_history(self, connection, session, session_id, message_ids):
         rows = await self.store.read_history(connection, session, session_id, message_ids)
         character = session["character_id"]
-        withdrawn = await MemoryStore(self.store.database).withdrawn_requests(connection, character)
+        withdrawn = await withdrawn_messages(connection, character)
         return {
             "messages": [
                 message_view(
-                    redact_message(row) if row["request_id"] in withdrawn else row,
+                    redact_message(row) if row["message_id"] in withdrawn else row,
                 )
                 for row in rows
             ]
         }
 
     async def update_state(self, connection, session, patch):
-        """在工具事务内覆盖给定字段，未给定字段保留。"""
-        state = SessionState.model_validate({**session["session_state"], **patch})
-        await self.store.update_state(connection, session["session_id"], state.model_dump())
-        return state.model_dump()
+        """合并工具边界已校验的字段；未给定字段保留。"""
+        state = {**session["session_state"], **patch}
+        await self.store.update_state(connection, session["session_id"], state)
+        return state
 
     async def execute_tool(self, session_id, request_id, step, call, operation, signal):
         return await self.store.execute_tool(session_id, request_id, step, call, operation, signal)
 
     async def close_pending_tools(self, session_id):
         await self.store.close_pending_tools(session_id)
-
-
-def visible_message(row):
-    if row["message_kind"] == "tool_result":
-        return False
-    return (
-        row["message_kind"] != "assistant_message"
-        or any(
-            b["type"] == "text" and b.get("text") for b in row["message_json"].get("content", [])
-        )
-        or row["message_json"].get("status") in ("failed", "cancelled")
-    )

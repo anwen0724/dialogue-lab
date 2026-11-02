@@ -32,7 +32,10 @@ class MemoryService:
 
     async def search(self, connection, session, query, after=None, before=None):
         try:
-            dates = [datetime.fromisoformat(value) if value else None for value in (after, before)]
+            dates = [
+                datetime.fromisoformat(value) if value is not None else None
+                for value in (after, before)
+            ]
             if any(value is not None and value.tzinfo is None for value in dates):
                 raise ValueError
             if all(dates) and dates[0] >= dates[1]:

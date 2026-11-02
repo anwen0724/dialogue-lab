@@ -109,16 +109,11 @@ class Tools:
 
     async def definitions(self, session_id):
         session = await self.sessions.store.get(session_id)
-        return (
-            [STATE_TOOL, SAVE_MEMORY_TOOL, SEARCH_MEMORY_TOOL, HISTORY_TOOL, FORGET_MEMORY_TOOL]
-            if session["character_id"]
-            else [STATE_TOOL]
-        )
+        return available_tools(session["character_id"])
 
     async def execute(self, session_id, request_id, step, call, signal=None):
-        definitions = {tool.name: tool for tool in await self.definitions(session_id)}
-
         async def operation(connection, session):
+            definitions = {tool.name: tool for tool in available_tools(session["character_id"])}
             try:
                 tool = definitions.get(call.name)
                 if tool is None:
@@ -161,7 +156,9 @@ class Tools:
                         call.name,
                         json.dumps(
                             {
-                                "code": getattr(error, "code", "INVALID_TOOL_ARGUMENTS"),
+                                "code": error.code
+                                if isinstance(error, SessionError)
+                                else "INVALID_TOOL_ARGUMENTS",
                                 "message": str(error),
                             },
                             ensure_ascii=False,
@@ -178,3 +175,11 @@ class Tools:
             operation,
             signal,
         )
+
+
+def available_tools(character_id):
+    return (
+        [STATE_TOOL, SAVE_MEMORY_TOOL, SEARCH_MEMORY_TOOL, HISTORY_TOOL, FORGET_MEMORY_TOOL]
+        if character_id is not None
+        else [STATE_TOOL]
+    )
